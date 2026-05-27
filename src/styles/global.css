@@ -4,7 +4,7 @@
       font-weight: 400; font-style: normal;
     }
     *{margin:0;padding:0;box-sizing:border-box}
-    body{font-family:'Alegreya Sans',sans-serif;background-color:#F5F0E8;color:#2C1810;font-size:14px;background-repeat:no-repeat,repeat;background-size:100% auto,auto;background-position:top center,top left;overflow-x:hidden}
+    body{font-family:'Alegreya Sans',sans-serif;background-color:#F5F0E8;color:#2C1810;font-size:14px;background-repeat:no-repeat;background-size:100% auto;background-position:top center;overflow-x:hidden}
     #root{min-height:100vh}
     ::-webkit-scrollbar{width:6px}
     ::-webkit-scrollbar-track{background:#F0EBE0}
