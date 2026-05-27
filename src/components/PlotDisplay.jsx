@@ -1,7 +1,7 @@
 /* WDZ Online – components/PlotDisplay.jsx */
 import { FM } from "../game/constants.js";
 import { IMG_BASE, mapImgUrl } from "../utils/index.js";
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 
 export function PlotDisplay({plots, familyId, plotOk}) {
   var f=FM[familyId];

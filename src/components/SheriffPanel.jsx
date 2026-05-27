@@ -8,6 +8,11 @@ import { RewolwerowiecNew } from "./Revolver.jsx";
 import { DebriefingPanel } from "./DebriefingPanel.jsx";
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 
+function buildFamilyLink(roomCode, fId) {
+  var base = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, "/");
+  return base + "?s=" + roomCode + "&f=" + fId;
+}
+
 export function SheriffPlanningTab({readOnly,roomCode,lobbyPlayers,gameStarted,setGameStarted,showMsg,db,mapEnabled,setMapEnabled,bnbEnabled,setBnbEnabled,activateBnb,devMode,setDevMode}){
   const [cpd,setCpd]=useState({});
   const [cpAll,setCpAll]=useState(false);

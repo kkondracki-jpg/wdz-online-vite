@@ -1,0 +1,11 @@
+/* WDZ Admin – styles.css */
+@font-face{font-family:'Aka Posse';src:url('/fonts/akaPosse.ttf') format('truetype');}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Alegreya Sans',Georgia,serif;background:#1A0A08;color:#F5F0E8;min-height:100vh;}
+.wt{font-family:'Aka Posse',serif;}
+::-webkit-scrollbar{width:6px;}
+::-webkit-scrollbar-track{background:#2C1810;}
+::-webkit-scrollbar-thumb{background:#8B5E3C;border-radius:3px;}
+button{cursor:pointer;font-family:'Alegreya Sans',Georgia,serif;}
+input,select,textarea{font-family:'Alegreya Sans',Georgia,serif;}
+select option{background:#3A2218;color:#F5F0E8;}

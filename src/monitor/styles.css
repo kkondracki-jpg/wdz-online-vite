@@ -1,0 +1,9 @@
+/* WDZ Monitor – styles.css */
+@font-face{font-family:'Aka Posse';src:url('/fonts/akaPosse.ttf') format('truetype');}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Alegreya Sans',sans-serif;background:#1A0E08;color:#F5F0E8;min-height:100vh;}
+.wt{font-family:'Aka Posse',serif;}
+::-webkit-scrollbar{width:6px;}
+::-webkit-scrollbar-track{background:#2C1810;}
+::-webkit-scrollbar-thumb{background:#6B3A2A;border-radius:3px;}
+::-webkit-scrollbar-thumb:hover{background:#842504;}
