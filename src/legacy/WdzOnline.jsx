@@ -117,9 +117,10 @@ function Lobby({onJoin}){
         if(metaSnap.exists()){
           db.ref("rooms/"+foundRoomCode+"/players/"+roleKey).set({connected:true,rejoinedAt:firebase.database.ServerValue.TIMESTAMP});
           db.ref("rooms/"+foundRoomCode+"/players/"+roleKey).onDisconnect().update({connected:false});
-          db.ref("rooms/"+foundRoomCode+"/roles/"+roleKey).set(auth.currentUser.uid);
-          setSheriffEntryRole(null);setRoomCode(foundRoomCode);setSelectedRole(roleKey);setLoading(false);
-          onJoin(foundRoomCode,roleKey,null,null);
+          db.ref("rooms/"+foundRoomCode+"/roles/"+roleKey).set(auth.currentUser.uid).then(function(){
+            setSheriffEntryRole(null);setRoomCode(foundRoomCode);setSelectedRole(roleKey);setLoading(false);
+            onJoin(foundRoomCode,roleKey,null,null);
+          }).catch(function(e){setError("Błąd zapisu roli: "+e.message);setLoading(false);});
         } else {
           if(role==="sheriff2"){setError("Rozgrywka jeszcze nie istnieje. Główny Szeryf musi ją utworzyć pierwszy.");setLoading(false);return;}
           db.ref("rooms/"+foundRoomCode+"/meta").transaction(function(current){
@@ -127,11 +128,12 @@ function Lobby({onJoin}){
             return{created:firebase.database.ServerValue.TIMESTAMP,status:"lobby"};
           },function(err2,committed2){
             if(err2||!committed2){setError(err2?"Błąd tworzenia rozgrywki: "+err2.message:"Rozgrywka z tym kodem już istnieje.");setLoading(false);return;}
-            db.ref("rooms/"+foundRoomCode+"/roles/sheriff").set(auth.currentUser.uid);
-            db.ref("rooms/"+foundRoomCode+"/players/sheriff").set({connected:true,joinedAt:firebase.database.ServerValue.TIMESTAMP}).then(function(){
-              setSheriffEntryRole(null);setRoomCode(foundRoomCode);setSelectedRole("sheriff");setMode("created");setLoading(false);
-              db.ref("rooms/"+foundRoomCode+"/players/sheriff").onDisconnect().update({connected:false});
-            }).catch(function(e){setError("Błąd: "+e.message);setLoading(false);});
+            db.ref("rooms/"+foundRoomCode+"/roles/sheriff").set(auth.currentUser.uid).then(function(){
+              db.ref("rooms/"+foundRoomCode+"/players/sheriff").set({connected:true,joinedAt:firebase.database.ServerValue.TIMESTAMP}).then(function(){
+                setSheriffEntryRole(null);setRoomCode(foundRoomCode);setSelectedRole("sheriff");setMode("created");setLoading(false);
+                db.ref("rooms/"+foundRoomCode+"/players/sheriff").onDisconnect().update({connected:false});
+              }).catch(function(e){setError("Błąd: "+e.message);setLoading(false);});
+            }).catch(function(e){setError("Błąd zapisu roli: "+e.message);setLoading(false);});
           });
         }
       }).catch(function(e){setError("Błąd połączenia: "+e.message);setLoading(false);});
@@ -909,9 +911,13 @@ function App({roomCode,role,playerId,playerName}) {
     if(!bnbEnabled && activeTab==="bnb") setActiveTab(fallback);
   },[bnbEnabled]);
 
-  // Tryb produkcyjny: po ukończeniu tutoriala (ekran 9) auto-przejście na Majątek
+  // Tryb produkcyjny: po ukończeniu tutoriala (ekran 9) jednorazowe auto-przejście na Majątek
+  const tutorialRedirectedRef=useRef({});
   useEffect(()=>{
-    if(!devMode&&tutorialDone[familyId]&&activeTab==="tutorial") setActiveTab("inv");
+    if(!devMode&&tutorialDone[familyId]&&activeTab==="tutorial"&&!tutorialRedirectedRef.current[familyId]){
+      tutorialRedirectedRef.current[familyId]=true;
+      setActiveTab("inv");
+    }
   },[tutorialDone,familyId]);
 
   // T1 – synchronizuj formOpen z showP (formularz transakcji otwarty)
@@ -1081,6 +1087,10 @@ function App({roomCode,role,playerId,playerName}) {
       if(s.fateEnabled!==undefined)setFateEnabled(s.fateEnabled);
       if(s.devMode!==undefined)setDevMode(s.devMode);
       if(s.tutorialDone)setTutorialDone(s.tutorialDone);
+      // Gracz: wymuś tutorial jeśli nie ukończony
+      if(!isSheriffAny&&!s.devMode&&(!s.tutorialDone||!s.tutorialDone[familyId])){
+        setActiveTab("tutorial");
+      }
       // Fallback: odczytaj instructionCompleted jeśli tutorialDone nie ma danych dla tej rodziny
       if(!s.tutorialDone||!s.tutorialDone[familyId]){
         db.ref("rooms/"+roomCode+"/instructionCompleted/"+familyId).once("value").then(function(icSnap){
@@ -1392,6 +1402,8 @@ function App({roomCode,role,playerId,playerName}) {
       setBlindFate({});setPlotPenalties({});setRelations({});
       setMapBonusClaimed({});setMapLayout({adams:[0,0,0,0],bennet:[0,0,0,0],clinton:[0,0,0,0],dexter:[0,0,0,0]});
       setSheriffCalls([]);
+      setTutorialDone({});tutorialRedirectedRef.current={};
+      if(db&&roomCode)db.ref("rooms/"+roomCode+"/instructionCompleted").remove();
       if(bnbEnabled)setBnbSettled(false);
     }
     // Auto-cancel pending txs z poprzedniego etapu
@@ -1950,7 +1962,7 @@ function App({roomCode,role,playerId,playerName}) {
       </div>
       <div style={{display:"grid",gridTemplateColumns:(activeTab==="inv"||activeTab==="tutorial")?"1fr 360px":"1fr",gap:20,alignItems:"start",marginTop:12,padding:activeTab==="results"?0:"0 16px"}}>
         <div>
-          {activeTab==="tutorial"&&<InstructionSlides key={familyId} familyId={familyId} roomCode={roomCode} bnbEnabled={bnbEnabled} mapEnabled={mapEnabled} onTutorialDone={(fId)=>setTutorialDone(prev=>({...prev,[fId]:true}))}/>}
+          {activeTab==="tutorial"&&<InstructionSlides key={familyId} familyId={familyId} roomCode={roomCode} db={db} bnbEnabled={bnbEnabled} mapEnabled={mapEnabled} onTutorialDone={(fId)=>setTutorialDone(prev=>({...prev,[fId]:true}))}/>}
           {activeTab==="inv"&&(()=>{
             var f=FM[familyId];
             // Resources for own biz
@@ -2348,7 +2360,7 @@ function GameWrapper(){
   }
 
   if(gameInfo){
-    return <ScaleWrapper><App roomCode={gameInfo.roomCode} role={gameInfo.role} playerId={gameInfo.playerId} playerName={gameInfo.playerName}/></ScaleWrapper>;
+    return <ScaleWrapper><App key={gameInfo.roomCode} roomCode={gameInfo.roomCode} role={gameInfo.role} playerId={gameInfo.playerId} playerName={gameInfo.playerName}/></ScaleWrapper>;
   }
   return <ScaleWrapper><Lobby onJoin={handleJoin}/></ScaleWrapper>;
 }

@@ -23,7 +23,12 @@ if(!IS_LOCAL && typeof firebase !== "undefined"){
   fbApp = firebase.initializeApp(firebaseConfig);
   db = firebase.database();
   auth = firebase.auth();
-  auth.signInAnonymously().catch(function(e){ console.warn("[WDZ] Auth failed:", e.message); });
+  // Sign in anonymously only if no existing session (preserves email login)
+  auth.onAuthStateChanged(function(user){
+    if(!user){
+      auth.signInAnonymously().catch(function(e){ console.warn("[WDZ] Auth failed:", e.message); });
+    }
+  });
 }
 
 export function generateRoomCode(){

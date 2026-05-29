@@ -2,7 +2,7 @@
 import { FM, FO, BNB_PRODUCTS } from "../game/constants.js";
 import { IMG_BASE, toSlug } from "../utils/index.js";
 import { btnS } from "./ui.jsx";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 const INSTRUCTION_DATA = {
   adams: {
@@ -63,7 +63,7 @@ const INSTRUCTION_DATA = {
   }
 };
 
-export function InstructionSlides({familyId, roomCode, bnbEnabled, mapEnabled, onTutorialDone}) {
+export function InstructionSlides({familyId, roomCode, db, bnbEnabled, mapEnabled, onTutorialDone}) {
   const [page, setPage] = useState(0);
   const [maxVisited, setMaxVisited] = useState(0);
   const [allCompleted, setAllCompleted] = useState(false);

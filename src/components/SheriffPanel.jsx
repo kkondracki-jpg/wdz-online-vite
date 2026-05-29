@@ -115,6 +115,13 @@ export function SheriffPlanningTab({readOnly,roomCode,lobbyPlayers,gameStarted,s
         </div>
       </div>
     </div>
+    {!readOnly&&<div style={{marginTop:12,padding:"10px 14px",background:devMode?"#FFF3E0":"#FDFAF4",border:"1px solid "+(devMode?"#E8C060":"#D4C4A8"),borderRadius:4,display:"flex",alignItems:"center",gap:10}}>
+      <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer"}}>
+        <input type="checkbox" checked={devMode} onChange={e=>{if(e.target.checked){if(confirm("Przejść w tryb testowy? Gracze uzyskają natychmiastowy dostęp do wszystkich włączonych mechanik i możliwość handlu z dowolną rodziną."))setDevMode(true);}else setDevMode(false);}} style={{width:16,height:16,accentColor:"#C04030",cursor:"pointer"}}/>
+        <span style={{fontSize:13,color:devMode?"#C04030":"#5C4A3A",fontWeight:devMode?700:500}}>Tryb testowy</span>
+      </label>
+      {devMode&&<span style={{fontSize:12,color:"#C04030",fontStyle:"italic"}}>Gracze mają dostęp do wszystkich mechanik i handlują z dowolną rodziną</span>}
+    </div>}
     {gameStarted&&!readOnly&&<div style={{marginTop:16,textAlign:"center",padding:"10px",background:"#2E5B3C",fontSize:13,color:"#fff",fontWeight:700,borderRadius:4}}>✓ Rozgrywka w toku</div>}
   </div>);
 }
@@ -256,7 +263,7 @@ export function SheriffPanel({readOnly,fd,txs,consultations,setConsultations,con
           })}
         </div>
       </div>):
-      !gameStarted?(<div>
+      !gameStarted||stageIdx<0?(<div>
         <div style={{fontSize:13,color:"#5C4A3A",marginBottom:10}}>Ustaw czasy trwania etapów (minuty), a następnie kliknij Start.</div>
         {(()=>{
           var grouped=[
