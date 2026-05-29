@@ -393,8 +393,8 @@ export function SheriffPanel({readOnly,fd,txs,consultations,setConsultations,con
             {hasWaiting&&<div style={{marginBottom:6}}>
               {fWaiting.map(call=>{var absIdx=sheriffCalls.indexOf(call);return(
                 <div key={absIdx} style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                  <button style={{...btnS("success"),fontSize:12,padding:"3px 8px"}} onClick={()=>grantConsultation(call.fId)}>Sprzedaj</button>
-                  <button style={{fontSize:12,padding:"3px 6px",background:"#E8E0D0",color:"#5C4A3A",border:"1px solid #D4C4A8",borderRadius:4,cursor:"pointer",fontFamily:"inherit",fontWeight:600}} onClick={()=>dismissCall(absIdx)}>Odrzuć</button>
+                  <button style={{...btnS("success"),fontSize:12,padding:"3px 8px"}} onClick={()=>!readOnly&&grantConsultation(call.fId)}>Sprzedaj</button>
+                  <button style={{fontSize:12,padding:"3px 6px",background:"#E8E0D0",color:"#5C4A3A",border:"1px solid #D4C4A8",borderRadius:4,cursor:"pointer",fontFamily:"inherit",fontWeight:600}} onClick={()=>!readOnly&&dismissCall(absIdx)}>Odrzuć</button>
                 </div>
               );})}
             </div>}
@@ -405,7 +405,7 @@ export function SheriffPanel({readOnly,fd,txs,consultations,setConsultations,con
               return(<div key={idx} style={{display:"flex",alignItems:"center",gap:6,marginBottom:3,flexWrap:"wrap"}}>
                 <span style={{fontSize:12,color:"#5C4A3A"}}>K{idx+1}:</span>
                 <span style={{display:"flex",gap:1}}>{dots}</span>
-                {rem>0?<button style={{fontSize:11,padding:"2px 6px",background:"#8B6914",color:"#fff",border:"none",borderRadius:3,cursor:"pointer",fontFamily:"inherit"}} onClick={()=>completeConsult(fId,idx)}>Odnotuj</button>
+                {rem>0?<button style={{fontSize:11,padding:"2px 6px",background:"#8B6914",color:"#fff",border:"none",borderRadius:3,cursor:"pointer",fontFamily:"inherit"}} onClick={()=>!readOnly&&completeConsult(fId,idx)}>Odnotuj</button>
                 :<span style={{fontSize:12,color:"#2E5B3C",fontWeight:600}}>{"✓"}</span>}
               </div>);
             })}
@@ -524,17 +524,17 @@ export function SheriffPanel({readOnly,fd,txs,consultations,setConsultations,con
               return (<div key={fId} style={{background:"#FFF8E7",border:"1px solid "+f.col,borderRadius:5,padding:10}}>
                 <div style={{fontSize:13,fontWeight:700,color:f.col,marginBottom:6}} className="wt">{f.nom}</div>
                 <div style={{display:"flex",gap:4,marginBottom:8,flexWrap:"wrap"}}>
-                  <button style={{...btnS("fate"),fontSize:13,padding:"3px 8px",opacity:pol.p50?0.4:1}} onClick={()=>activatePolicy(fId,"p50")} disabled={!!pol.p50}>Polisa 50% (30$)</button>
-                  {pol.p50==="owned"&&<button style={{fontSize:13,padding:"3px 8px",background:"#C09090",color:"#fff",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"inherit",fontWeight:600}} onClick={()=>undoPolicy(fId,"p50")}>Cofnij 50%</button>}
-                  <button style={{...btnS("fate"),fontSize:13,padding:"3px 8px",opacity:pol.p100?0.4:1}} onClick={()=>activatePolicy(fId,"p100")} disabled={!!pol.p100}>Polisa 100% (50$)</button>
-                  {pol.p100==="owned"&&<button style={{fontSize:13,padding:"3px 8px",background:"#C09090",color:"#fff",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"inherit",fontWeight:600}} onClick={()=>undoPolicy(fId,"p100")}>Cofnij 100%</button>}
+                  <button style={{...btnS("fate"),fontSize:13,padding:"3px 8px",opacity:pol.p50?0.4:1}} onClick={()=>!readOnly&&activatePolicy(fId,"p50")} disabled={readOnly||!!pol.p50}>Polisa 50% (30$)</button>
+                  {pol.p50==="owned"&&<button style={{fontSize:13,padding:"3px 8px",background:"#C09090",color:"#fff",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"inherit",fontWeight:600}} onClick={()=>!readOnly&&undoPolicy(fId,"p50")}>Cofnij 50%</button>}
+                  <button style={{...btnS("fate"),fontSize:13,padding:"3px 8px",opacity:pol.p100?0.4:1}} onClick={()=>!readOnly&&activatePolicy(fId,"p100")} disabled={readOnly||!!pol.p100}>Polisa 100% (50$)</button>
+                  {pol.p100==="owned"&&<button style={{fontSize:13,padding:"3px 8px",background:"#C09090",color:"#fff",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"inherit",fontWeight:600}} onClick={()=>!readOnly&&undoPolicy(fId,"p100")}>Cofnij 100%</button>}
                 </div>
                 {rollsPending===0&&rollsDone<2&&<div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                  <button style={{...btnS("fate"),fontSize:13,padding:"3px 8px"}} onClick={()=>prepareRoll(fId,null)}>Bez polisy</button>
-                  {avPol.map(ap=><button key={ap.v} style={{...btnS("fate"),fontSize:13,padding:"3px 8px"}} onClick={()=>prepareRoll(fId,ap.v)}>Z polisą {ap.l}</button>)}
+                  <button style={{...btnS("fate"),fontSize:13,padding:"3px 8px"}} onClick={()=>!readOnly&&prepareRoll(fId,null)}>Bez polisy</button>
+                  {avPol.map(ap=><button key={ap.v} style={{...btnS("fate"),fontSize:13,padding:"3px 8px"}} onClick={()=>!readOnly&&prepareRoll(fId,ap.v)}>Z polisą {ap.l}</button>)}
                 </div>}
                 {rolls.map((roll,idx)=>(<div key={idx} style={{fontSize:13,color:"#5C4A3A",marginTop:4,padding:4,background:"#FFF8E7",borderRadius:3}}>
-                  <b>Rzut {idx+1}:</b> {roll.resolved?<span>{roll.dice1}+{roll.dice2}={roll.sum} &rarr; {roll.netEffectText}{roll.showCard&&<button style={{fontSize:13,padding:"1px 4px",marginLeft:4,cursor:"pointer",background:"#E8E0D0",border:"1px solid #C4B090",borderRadius:2,fontFamily:"inherit"}} onClick={()=>clearCard(fId,idx)}>Ukryj</button>}</span>:<span style={{fontStyle:"italic"}}>oczekuje...</span>}
+                  <b>Rzut {idx+1}:</b> {roll.resolved?<span>{roll.dice1}+{roll.dice2}={roll.sum} &rarr; {roll.netEffectText}{roll.showCard&&<button style={{fontSize:13,padding:"1px 4px",marginLeft:4,cursor:"pointer",background:"#E8E0D0",border:"1px solid #C4B090",borderRadius:2,fontFamily:"inherit"}} onClick={()=>!readOnly&&clearCard(fId,idx)}>Ukryj</button>}</span>:<span style={{fontStyle:"italic"}}>oczekuje...</span>}
                 </div>))}
               </div>);
             })}
@@ -572,7 +572,7 @@ export function SheriffPanel({readOnly,fd,txs,consultations,setConsultations,con
           <label style={{fontSize:13,color:"#5C4A3A"}}>Max stawka ($):</label>
           <input type="number" min={1} step={1} value={revMaxBet} onChange={e=>setRevMaxBet(Math.max(1,parseInt(e.target.value)||1))} style={{width:70,padding:4,borderRadius:4,border:"1px solid #842504",fontSize:13}} disabled={revActive.length>0}/>
         </div>}
-        {revMode==="arena"&&revActive.length===0&&<div>
+        {revMode==="arena"{revMode==="arena"&&revActive.length===0&&<div>{revMode==="arena"&&revActive.length===0&&<div>revActive.length===0&&!readOnly&&<div>
           <div style={{fontSize:13,fontWeight:600,color:"#5C4A3A",marginBottom:6}}>Wybierz parę do pojedynku:</div>
           <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
             {FO.map((a,ai)=>FO.slice(ai+1).map(b=>{
@@ -581,7 +581,7 @@ export function SheriffPanel({readOnly,fd,txs,consultations,setConsultations,con
             }))}
           </div>
         </div>}
-        {revMode==="arena"&&revCurrent&&revCurrent.status==="betting"&&<div style={{background:"#fff",border:"1px solid #842504",borderRadius:6,padding:12,marginBottom:8}}>
+        {revMode==="arena"{revMode==="arena"&&revCurrent&&revCurrent.status==="betting"&&<div{revMode==="arena"&&revCurrent&&revCurrent.status==="betting"&&<divrevCurrent&&revCurrent.status==="betting"&&!readOnly&&<div style={{background:"#fff",border:"1px solid #842504",borderRadius:6,padding:12,marginBottom:8}}>
           <div style={{fontSize:13,fontWeight:700,color:"#8B2500",marginBottom:8}} className="wt">{FM[revCurrent.familyA].nom} vs {FM[revCurrent.familyB].nom}</div>
           <div style={{fontSize:13,color:"#5C4A3A",marginBottom:6}}>Ustalcie stawkę (max {revMaxBet} $):</div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
@@ -590,7 +590,7 @@ export function SheriffPanel({readOnly,fd,txs,consultations,setConsultations,con
             <button style={btnS("danger")} onClick={()=>setRevActive(prev=>prev.filter((_,i)=>i!==0))}>Anuluj</button>
           </div>
         </div>}
-        {revMode==="tournament"&&revActive.length===0&&(()=>{
+        {revMode==="tournament"&&revActive.length===0&&!readOnly&&(()=>{
           var allPairs=[];FO.forEach((a,ai)=>FO.slice(ai+1).forEach(b=>{var played=revDuels.some(d=>(d.familyA===a&&d.familyB===b)||(d.familyA===b&&d.familyB===a));allPairs.push({a,b,played});}));
           var combos=[];
           for(var i=0;i<allPairs.length;i++){for(var j=i+1;j<allPairs.length;j++){var p1=allPairs[i],p2=allPairs[j];var fams=new Set([p1.a,p1.b,p2.a,p2.b]);if(fams.size===4&&!p1.played&&!p2.played)combos.push([p1,p2]);}}
@@ -644,7 +644,7 @@ export function SheriffPanel({readOnly,fd,txs,consultations,setConsultations,con
                 {(duel.rounds||[]).length>0&&<div style={{fontSize:12,color:"#8B7355",marginBottom:4}}>
                   {(duel.rounds||[]).map((r,i)=><span key={i} style={{marginRight:6}}>R{i+1}: {r.shotsA} vs {r.shotsB} {"→"} {r.winner==="A"?"←":r.winner==="B"?"→":"="}</span>)}
                 </div>}
-                {duel.shotsA!==null&&duel.shotsB!==null&&<button style={{...btnS("warning"),fontSize:12}} onClick={()=>revRevealDuel(duel.id)}>Odsłoń strzały</button>}
+                {duel.shotsA!==null&&duel.shotsB!==null&&<button style={{...btnS("warning"),fontSize:12}} onClick={()=>!readOnly&&revRevealDuel(duel.id)}>Odsłoń strzały</button>}
                 {duel.timerPhase&&dt>0&&<div style={{fontSize:14,fontWeight:700,color:dt<=5?"#8B2500":"#842504",textAlign:"center",padding:"4px 0",fontFamily:"monospace"}}>
                   {duel.timerPhase==="declaration"?"Deklaracja: ":"Odsłonięcie: "}{dt}s
                 </div>}
@@ -653,13 +653,13 @@ export function SheriffPanel({readOnly,fd,txs,consultations,setConsultations,con
                 <div style={{fontSize:14,fontWeight:700,color:"#842504",marginBottom:4}} className="wt">Koniec!</div>
                 <div style={{fontSize:13,color:"#5C4A3A",marginBottom:4}}>{duel.winner?<span>Wygrywa: <b style={{color:FM[duel.winner].col}}>{FM[duel.winner].nom}</b> ({duel.winField})</span>:<span>Remis!</span>}</div>
                 {duel.winner&&<div style={{fontSize:12,color:"#5C4A3A",marginBottom:6}}>Transfer: {Math.round(duel.bet*(duel.winField==="wygrana"?1:duel.winField==="dominacja"?2/3:1/3))} $</div>}
-                <button style={{...btnS("success"),fontSize:12}} onClick={()=>revSettleDuel(duel.id)}>Rozlicz</button>
+                <button style={{...btnS("success"),fontSize:12}} onClick={()=>!readOnly&&revSettleDuel(duel.id)}>Rozlicz</button>
               </div>}
             </div>);
           })}
         </div>}
         {revMode==="tournament"&&revActive.length>0&&revActive.every(d=>d.status==="finished")&&<div style={{textAlign:"center",marginTop:10}}>
-          <button style={btnS("success")} onClick={()=>{revActive.forEach(d=>revSettleDuel(d.id));}}>Rozlicz oba pojedynki</button>
+          <button style={btnS("success")} onClick={()=>{if(!readOnly)revActive.forEach(d=>revSettleDuel(d.id));}}>Rozlicz oba pojedynki</button>
         </div>}
         {(revDuels||[]).length>0&&<div style={{marginTop:12}}>
           <div style={{fontSize:13,fontWeight:600,color:"#5C4A3A",marginBottom:4}}>Historia pojedynków:</div>
