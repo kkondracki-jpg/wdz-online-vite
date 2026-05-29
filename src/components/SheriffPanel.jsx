@@ -572,7 +572,7 @@ export function SheriffPanel({readOnly,fd,txs,consultations,setConsultations,con
           <label style={{fontSize:13,color:"#5C4A3A"}}>Max stawka ($):</label>
           <input type="number" min={1} step={1} value={revMaxBet} onChange={e=>setRevMaxBet(Math.max(1,parseInt(e.target.value)||1))} style={{width:70,padding:4,borderRadius:4,border:"1px solid #842504",fontSize:13}} disabled={revActive.length>0}/>
         </div>}
-        {revMode==="arena"{revMode==="arena"&&revActive.length===0&&<div>{revMode==="arena"&&revActive.length===0&&<div>revActive.length===0&&!readOnly&&<div>
+        {revMode==="arena"&&revActive.length===0&&!readOnly&&<div>
           <div style={{fontSize:13,fontWeight:600,color:"#5C4A3A",marginBottom:6}}>Wybierz parę do pojedynku:</div>
           <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
             {FO.map((a,ai)=>FO.slice(ai+1).map(b=>{
@@ -581,7 +581,7 @@ export function SheriffPanel({readOnly,fd,txs,consultations,setConsultations,con
             }))}
           </div>
         </div>}
-        {revMode==="arena"{revMode==="arena"&&revCurrent&&revCurrent.status==="betting"&&<div{revMode==="arena"&&revCurrent&&revCurrent.status==="betting"&&<divrevCurrent&&revCurrent.status==="betting"&&!readOnly&&<div style={{background:"#fff",border:"1px solid #842504",borderRadius:6,padding:12,marginBottom:8}}>
+        {revMode==="arena"&&revCurrent&&revCurrent.status==="betting"&&!readOnly&&<div style={{background:"#fff",border:"1px solid #842504",borderRadius:6,padding:12,marginBottom:8}}>
           <div style={{fontSize:13,fontWeight:700,color:"#8B2500",marginBottom:8}} className="wt">{FM[revCurrent.familyA].nom} vs {FM[revCurrent.familyB].nom}</div>
           <div style={{fontSize:13,color:"#5C4A3A",marginBottom:6}}>Ustalcie stawkę (max {revMaxBet} $):</div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
