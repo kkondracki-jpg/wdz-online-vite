@@ -176,15 +176,15 @@ function Lobby({onJoin}){
   function handleCreate(){
     if(!db){setError("Brak połączenia z Firebase. Otwórz grę z GitHub Pages.");return;}
     setLoading(true);setError(null);
-    // P2-5 – atomowe tworzenie pokoju: transaction zamiast once+set (eliminuje TOCTOU)
+    // P2-5 – atomowe tworzenie rozgrywki: transaction zamiast once+set (eliminuje TOCTOU)
     function tryCreate(attempt){
       if(attempt>5){setError("Nie udało się wygenerować unikalnego kodu. Spróbuj ponownie.");setLoading(false);return;}
       var code=generateRoomCode();
       db.ref("rooms/"+code+"/meta").transaction(function(current){
-        if(current!==null) return; // pokój już istnieje – abort, kolejna próba
+        if(current!==null) return; // rozgrywka już istnieje – abort, kolejna próba
         return {created:firebase.database.ServerValue.TIMESTAMP,status:"lobby"};
       },function(err,committed,snapshot){
-        if(err){setError("Błąd tworzenia pokoju: "+err.message);setLoading(false);return;}
+        if(err){setError("Błąd tworzenia rozgrywki: "+err.message);setLoading(false);return;}
         if(!committed){tryCreate(attempt+1);return;} // kolizja – spróbuj ponownie
         // Sukces – dopisz pierwszego gracza (sheriff) i przełącz UI
         db.ref("rooms/"+code+"/players/sheriff").set({connected:true,joinedAt:firebase.database.ServerValue.TIMESTAMP}).then(function(){
@@ -197,7 +197,7 @@ function Lobby({onJoin}){
   }
 
   function handleJoin(){
-    if(!joinCode.trim()){setError("Wpisz kod pokoju");return;}
+    if(!joinCode.trim()){setError("Wpisz kod rozgrywki");return;}
     var code=joinCode.trim().toUpperCase();
     if(!/^WDZ-[A-HJ-NP-Z2-9]{6}$/.test(code)){setError("Nieprawidłowy format kodu (WDZ-XXXXXX)");return;}
     if(!db){setError("Brak połączenia z Firebase.");return;}
@@ -552,6 +552,7 @@ async function generateTrainerPDF(data) {
     }
   } catch(e){console.warn("[WDZ PDF] Font fallback to Helvetica:",e);}
   var FONT = fontLoaded ? "AlegreyaSans" : "helvetica";
+  var ARROW = fontLoaded ? "\u2192" : " > ";
   function setF(style,size){doc.setFont(FONT,style||"normal");doc.setFontSize(size||11);}
   function setC(c){doc.setTextColor(c[0],c[1],c[2]);}
   function chk(n){if(Y+n>FOOTER_Y){doc.addPage();Y=MT;}}
@@ -606,15 +607,15 @@ async function generateTrainerPDF(data) {
   hd("Relacje");
   var anyRel=false;FO.forEach(function(rater){if(rels[rater])FO.forEach(function(rated){if(rater!==rated&&rels[rater][rated])anyRel=true;});});
   if(anyRel){
-    var rlH=[["Oceniający -> Oceniany","Partnerstwo","Zasady","Komunikacja","Suma /15"]];var rlR=[];
-    FO.forEach(function(rater){FO.forEach(function(rated){if(rater===rated)return;var r=rels[rater]&&rels[rater][rated];if(!r)return;var tot=(r.partnership||0)+(r.rules||0)+(r.communication||0);rlR.push([FM[rater].nom+" -> "+FM[rated].nom,r.partnership||0,r.rules||0,r.communication||0,tot]);});});
+    var rlH=[["Od rodziny "+ARROW+"Dla rodziny","Partnerstwo","Zasady","Komunikacja","Suma /15"]];var rlR=[];
+    FO.forEach(function(rater){FO.forEach(function(rated){if(rater===rated)return;var r=rels[rater]&&rels[rater][rated];if(!r)return;var tot=(r.partnership||0)+(r.rules||0)+(r.communication||0);rlR.push([FM[rater].nom+" "+ARROW+" "+FM[rated].nom,r.partnership||0,r.rules||0,r.communication||0,tot]);});});
     doc.autoTable({startY:Y,head:rlH,body:rlR,margin:{left:ML,right:MR},styles:{font:FONT,fontSize:9,cellPadding:2,halign:"center"},headStyles:{fillColor:COL.dark,textColor:COL.white,fontStyle:"bold"},columnStyles:{0:{halign:"left"}},alternateRowStyles:{fillColor:[250,245,238]}});
     Y=doc.lastAutoTable.finalY+8;
   } else { bt("Brak danych o relacjach."); Y+=4; }
   // 5. ŚLEPY LOS
   hd("Ślepy Los");
   var anyFate=false;
-  FO.forEach(function(fId){var bfd=bf[fId];if(!bfd||!bfd.rolls)return;var rolls=(Array.isArray(bfd.rolls)?bfd.rolls:Object.values(bfd.rolls)).filter(function(r){return r&&r.resolved;});if(!rolls.length)return;anyFate=true;chk(12+rolls.length*6);setF("bold",10);setC(COL.families[fId]||COL.text);doc.text(FM[fId].nom+":",ML,Y);Y+=5;rolls.forEach(function(r){var ev=r.event||{};var eff=r.netEffectText||(ev.amount?(ev.amount>0?"+":"")+ev.amount+" $":"brak efektu");setF("normal",10);setC(COL.text);var ln="    Wynik "+(r.sum||"?")+" – "+(ev.text||"–")+" → "+eff;var wr=doc.splitTextToSize(ln,PW-8);doc.text(wr,ML+4,Y);Y+=wr.length*4.5;});Y+=3;});
+  FO.forEach(function(fId){var bfd=bf[fId];if(!bfd||!bfd.rolls)return;var rolls=(Array.isArray(bfd.rolls)?bfd.rolls:Object.values(bfd.rolls)).filter(function(r){return r&&r.resolved;});if(!rolls.length)return;anyFate=true;chk(12+rolls.length*6);setF("bold",10);setC(COL.families[fId]||COL.text);doc.text(FM[fId].nom+":",ML,Y);Y+=5;rolls.forEach(function(r){var ev=r.event||{};var eff=r.netEffectText||(ev.amount?(ev.amount>0?"+":"")+ev.amount+" $":"brak efektu");setF("normal",10);setC(COL.text);var ln="    Wynik "+(r.sum||"?")+" – "+(ev.text||"–")+" "+ARROW+" "+eff;var wr=doc.splitTextToSize(ln,PW-8);doc.text(wr,ML+4,Y);Y+=wr.length*4.5;});Y+=3;});
   if(!anyFate){bt("Brak rzutów.");Y+=4;}
   // 6. BnB
   if(data.bnbEnabled&&fd){
@@ -627,13 +628,13 @@ async function generateTrainerPDF(data) {
   // 7. Złotodajna Żyła
   if(data.mapEnabled&&fd){
     hd("Złotodajna Żyła");
-    var mw=null,mf=0;FO.forEach(function(f){var items=(fd[f]||{}).items||[];if(!Array.isArray(items))items=Object.values(items);var fs2={};items.forEach(function(i){if(i.cat===C_MAP)fs2[i.fragNr]=true;});var cnt=Object.keys(fs2).length;if(cnt>mf){mf=cnt;mw=f;}else if(cnt===mf&&mf>0){mw=null;}});
+    var mbc=data.mapBonusClaimed||{};var mw=null;FO.forEach(function(f){if(mbc[f])mw=f;});
     var zpH=[["Rodzina","Fragmenty mapy","Bonus pkt","Rozliczenie"]];
     var zpR=FO.map(function(fId){var items=(fd[fId]||{}).items||[];if(!Array.isArray(items))items=Object.values(items);var fs2={};items.forEach(function(i){if(i.cat===C_MAP)fs2[i.fragNr]=true;});var cnt=Object.keys(fs2).length;var sc=scores[fId]||{};var sett=mw===fId?"+300 $":(mw?"-100 $":"0 $");return[FM[fId].nom,cnt+"/4",sc.mapScore+"/10",sett];});
     doc.autoTable({startY:Y,head:zpH,body:zpR,margin:{left:ML,right:MR},styles:{font:FONT,fontSize:9,cellPadding:2,halign:"center"},headStyles:{fillColor:COL.dark,textColor:COL.white,fontStyle:"bold"},columnStyles:{0:{halign:"left"}},alternateRowStyles:{fillColor:[250,245,238]},didParseCell:function(d2){if(d2.section==="body"&&d2.column.index===3){var v=d2.cell.raw;if(v&&v.includes("+"))d2.cell.styles.textColor=COL.green;else if(v&&v.includes("-"))d2.cell.styles.textColor=COL.red;}}});
     Y=doc.lastAutoTable.finalY+4;
     if(mw)bt("Zwycięzca wyścigu: "+FM[mw].nom+" (premia 300 $, pozostali wpłacają 100 $)",{style:"bold",size:10});
-    else bt("Brak zwycięzcy wyścigu – nikt nie zebrał kompletnej mapy lub remis.",{size:10,color:COL.textDim});
+    else bt("Brak zwycięzcy wyścigu \u2013 nikt nie ułożył Złotodajnej Żyły lub remis.",{size:10,color:COL.textDim});
     Y+=4;
   }
   // 8. Rewolwerowiec
@@ -649,7 +650,7 @@ async function generateTrainerPDF(data) {
   for(var p=1;p<=tp;p++){doc.setPage(p);setF("normal",8);setC(COL.textDim);doc.text("Strona "+p+" / "+tp,210-MR,FOOTER_Y+5,{align:"right"});doc.text("aleGRA Twórczy Rozwój – Wschód Dzikiego Zachodu© Online",105,FOOTER_Y+5,{align:"center"});}
   // Save
   var ds=meta.createdAt?new Date(meta.createdAt).toISOString().slice(0,10):new Date().toISOString().slice(0,10);
-  doc.save("wdz-trener-"+rc+"-"+ds+".pdf");
+  doc.save("wdz-raport-"+rc+"-"+ds+".pdf");
 }
 
 /* ========== STAR RATING ========== */
@@ -1279,7 +1280,7 @@ function App({roomCode,role,playerId,playerName}) {
     if(!mapEnabled) return;
     if(mapBonusClaimed[fId]) return;
     var anyWinner=Object.values(mapBonusClaimed).some(v=>v);
-    if(anyWinner){showMsg("Bonus mapy został już przyznany innej rodzinie!");return;}
+    if(anyWinner){showMsg("Premia Złotodajnej Żyły została już przyznana innej rodzinie!");return;}
     // Walidacja lokalna: czy rodzina ma 4 unikalne fragmenty?
     var localItems=stateRef.current.fd[fId]?stateRef.current.fd[fId].items:[];
     var localFrags=[...new Set(localItems.filter(function(i){return i.cat===C_MAP;}).map(function(i){return i.fragNr;}))];
@@ -1294,7 +1295,7 @@ function App({roomCode,role,playerId,playerName}) {
         return mbc;
       },function(err,committed){
         if(err){showMsg("Błąd zapisu: "+err.message);return;}
-        if(!committed){showMsg("Bonus mapy został już przyznany innej rodzinie!");return;}
+        if(!committed){showMsg("Premia Złotodajnej Żyły została już przyznana innej rodzinie!");return;}
         // Krok 2: transaction na fd – cash 4 rodzin
         var fdRef=db.ref("rooms/"+roomCode+"/gameState/fd");
         fdRef.transaction(function(fd){
@@ -1312,7 +1313,12 @@ function App({roomCode,role,playerId,playerName}) {
           });
           return fd;
         },function(err2,committed2,snapshot){
-          if(err2){showMsg("Błąd rozliczenia: "+err2.message);return;}
+          if(err2){
+            // Rollback flagi mapBonusClaimed – transakcja fd nie powiodła się
+            mbcRef.transaction(function(mbc){if(mbc&&mbc[fId]){mbc[fId]=false;return mbc;}return mbc;});
+            setMapBonusClaimed(function(p){var n=Object.assign({},p);delete n[fId];return n;});
+            showMsg("Błąd rozliczenia: "+err2.message);return;
+          }
           if(committed2){
             var newFd=snapshot.val();
             fbIncoming.current=true;
@@ -1358,7 +1364,7 @@ function App({roomCode,role,playerId,playerName}) {
       if(prev.some(function(t){return t&&t.id===mbTxId;})) return prev;
       return [{id:mbTxId,type:"map_bonus",from:fId,to:"all",status:"accepted",offeredItems:[]},...prev];
     });
-    showMsg(FM[fId].nom+" zdobyli kompletną mapę! Bonus 300 $!");
+    showMsg(FM[fId].nom+" ułożyli Złotodajną Żyłę! Premia 300 $!");
   }
 
   // === TIMER EFFECT – S3: secondsLeft wyliczane z timerStartedAt + serverTimeOffset ===

@@ -15,6 +15,7 @@ export default defineConfig({
         main: resolve(__dirname, "index.html"),
         admin: resolve(__dirname, "admin.html"),
         monitor: resolve(__dirname, "monitor.html"),
+        simulator: resolve(__dirname, "simulator.html"),
       },
     },
   },

@@ -1,10 +1,10 @@
 /* WDZ Online – game/constants.js */
 
 export const FM = {
-  adams:  {id:"adams",  nom:"Adamsowie",  gen:"Adamsów",  biz:"Saloon",            col:"#A75F4A", sPlot:6,  tPlot:1, mapFrag:1},
-  bennet: {id:"bennet", nom:"Bennetowie", gen:"Bennetów", biz:"Zakład Pogrzebowy", col:"#726072", sPlot:4,  tPlot:6, mapFrag:2},
-  clinton:{id:"clinton",nom:"Clintonowie",gen:"Clintonów",biz:"Bank",              col:"#5E5971", sPlot:20, tPlot:4, mapFrag:3},
-  dexter: {id:"dexter", nom:"Dexterowie", gen:"Dexterów", biz:"Ranczo",            col:"#5B7674", sPlot:1,  tPlot:20,mapFrag:4},
+  adams:  {id:"adams",  nom:"Adamsowie",  gen:"Adamsów",  biz:"Saloon",            col:"#A75F4A", agCol:"#E9CDC2", sPlot:6,  tPlot:1, mapFrag:1},
+  bennet: {id:"bennet", nom:"Bennetowie", gen:"Bennetów", biz:"Zakład Pogrzebowy", col:"#726072", agCol:"#C0B8C0", sPlot:4,  tPlot:6, mapFrag:2},
+  clinton:{id:"clinton",nom:"Clintonowie",gen:"Clintonów",biz:"Bank",              col:"#5E5971", agCol:"#CECDD4", sPlot:20, tPlot:4, mapFrag:3},
+  dexter: {id:"dexter", nom:"Dexterowie", gen:"Dexterów", biz:"Ranczo",            col:"#5B7674", agCol:"#CED6D5", sPlot:1,  tPlot:20,mapFrag:4},
 };
 export const FO = ["adams","bennet","clinton","dexter"];
 
@@ -88,3 +88,31 @@ export function getMeetingPartner(fId,pairingIdx){
   for(var p of pairs){if(p.includes(fId))return p.find(x=>x!==fId);}
   return null;
 }
+
+export const G_TASKS = {
+  adams:{
+    zasoby:[{id:"stara-destylarnia",pct:30},{id:"pianino",pct:20},{id:"kredens",pct:20},{id:"debowa-beczka",pct:10},{id:"talia-kart",pct:10},{id:"mosiezny-zyrandol",pct:5},{id:"zeliwny-kociolek",pct:5}],
+    kompetencje:[{id:"organizowanie-turniejow-pokera",pct:43},{id:"pedzenie-szkockiej-whisky",pct:27},{id:"prowadzenie-kuchni-zbiorowej",pct:18},{id:"przechowywanie-piwa",pct:12}]
+  },
+  bennet:{
+    zasoby:[{id:"zestaw-narzedzi",pct:30},{id:"czarny-material",pct:20},{id:"drewniany-wozek",pct:20},{id:"szpadel",pct:10},{id:"dluto-do-kamienia",pct:10},{id:"zestaw-wizazysty",pct:5},{id:"podest-dla-mowcy",pct:5}],
+    kompetencje:[{id:"podstawy-stolarstwa",pct:43},{id:"sztuka-balsamowania",pct:27},{id:"podstawy-makijazu-posmiertnego",pct:18},{id:"wyglaszanie-mow-pogrzebowych",pct:12}]
+  },
+  clinton:{
+    zasoby:[{id:"sejf",pct:30},{id:"liczydlo",pct:20},{id:"karabin",pct:20},{id:"stalowe-drzwi",pct:10},{id:"kasetka",pct:10},{id:"lupa",pct:5},{id:"waga-jubilerska",pct:5}],
+    kompetencje:[{id:"zapewnienie-bezpieczenstwa",pct:43},{id:"obsluga-zamka-szyfrowego",pct:27},{id:"biegla-obsluga-liczydla",pct:18},{id:"ocena-wartosci-samorodkow",pct:12}]
+  },
+  dexter:{
+    zasoby:[{id:"lasso",pct:30},{id:"siodlo",pct:20},{id:"colt-navy-1857",pct:20},{id:"wysokie-buty",pct:10},{id:"manierka",pct:10},{id:"kapelusz",pct:5},{id:"pas-z-kabura",pct:5}],
+    kompetencje:[{id:"poslugiwanie-sie-lassem",pct:43},{id:"leczenie-chorob-bydla",pct:27},{id:"szybkostrzelnosc-i-celnosc-oka",pct:18},{id:"odnajdywanie-zrodel-wody",pct:12}]
+  }
+};
+
+export const WDZ_COLORS = {
+  primary:"#842504", headerBar:"#4C130F", gold:"#D4A853",
+  bg:"#1A0E08", panel:"#2C1810", border:"#3C2820",
+  text:"#F5F0E8", textDim:"#A89070", textMut:"#8B7355",
+  red:"#C04030", greenLt:"#8BC88B", greenDk:"#2E5B3C",
+};
+
+export const CATS_MAX = {zasoby:30,kompetencje:25,gotowka:25,dzialka:10,mapa:10,relacje:20};

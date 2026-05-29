@@ -3,11 +3,126 @@
  * Zero logic changes – only import/export adaptation.
  */
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { FM, FO, G_TASKS, C_RES, C_COMP, C_PLOT, C_MAP, C_BNB, STAGES, BNB_PRODUCTS } from "../constants/index.js";
+import { FM, FO, G_TASKS, C_RES, C_COMP, C_PLOT, C_MAP, C_BNB, STAGES, BNB_PRODUCTS } from "../game/constants.js";
 import { ensureArray, toSlug } from "../utils/index.js";
-import { calcScore, calcRelationScore } from "../scoring/index.js";
+import { calcScore, calcRelationScore } from "../game/scoring.js";
 import { generateRoomCode } from "../firebase/config.js";
 import { db, auth, firebase } from "./firebase-init.js";
+import { jsPDF } from "jspdf";
+import "jspdf-autotable";
+
+
+/* ===== generateTrainerPDF – raport trenerski (PDF) ===== */
+async function generateTrainerPDF(data) {
+  var doc = new jsPDF({orientation: "portrait", unit: "mm", format: "a4"});
+  var ML = 20, MR = 20, MT = 20, PW = 210 - 40, PAGE_H = 297, FOOTER_Y = 282, Y = MT;
+  var COL = {
+    primary:[132,37,4], dark:[76,19,15], gold:[212,168,83], text:[44,24,16],
+    textDim:[107,90,74], white:[255,255,255], bg:[245,240,232], line:[212,196,168],
+    green:[46,91,60], red:[192,64,48],
+    families:{adams:[167,95,74],bennet:[114,96,114],clinton:[94,89,113],dexter:[91,118,116]}
+  };
+  var fontLoaded = false;
+  try {
+    var fontBase = (data.imgBase||"img/").replace(/img\/$/, "fonts/");
+    var resps = await Promise.all([fetch(fontBase+"alegreya-sans-400.ttf"),fetch(fontBase+"alegreya-sans-500.ttf")]);
+    if(resps[0].ok && resps[1].ok){
+      var bufs = await Promise.all(resps.map(function(r){return r.arrayBuffer();}));
+      function ab2b64(buf){var bytes=new Uint8Array(buf),bin="",len=bytes.byteLength;for(var i=0;i<len;i++)bin+=String.fromCharCode(bytes[i]);return btoa(bin);}
+      doc.addFileToVFS("AS-Reg.ttf",ab2b64(bufs[0]));doc.addFileToVFS("AS-Med.ttf",ab2b64(bufs[1]));
+      doc.addFont("AS-Reg.ttf","AlegreyaSans","normal");doc.addFont("AS-Med.ttf","AlegreyaSans","bold");
+      fontLoaded=true;
+    }
+  } catch(e){console.warn("[WDZ PDF] Font fallback to Helvetica:",e);}
+  var FONT = fontLoaded ? "AlegreyaSans" : "helvetica";
+  var ARROW = fontLoaded ? "\u2192" : " > ";
+  function setF(style,size){doc.setFont(FONT,style||"normal");doc.setFontSize(size||11);}
+  function setC(c){doc.setTextColor(c[0],c[1],c[2]);}
+  function chk(n){if(Y+n>FOOTER_Y){doc.addPage();Y=MT;}}
+  function hd(text){chk(14);Y+=4;setF("bold",13);setC(COL.primary);doc.text(text,ML,Y);Y+=2;doc.setDrawColor(COL.gold[0],COL.gold[1],COL.gold[2]);doc.setLineWidth(0.5);doc.line(ML,Y,ML+PW,Y);Y+=6;}
+  function bt(text,opts){opts=opts||{};setF(opts.style||"normal",opts.size||11);setC(opts.color||COL.text);var ls=doc.splitTextToSize(text,opts.maxW||PW);chk(ls.length*5);doc.text(ls,opts.x||ML,Y);Y+=ls.length*5;}
+  var rc=data.roomCode||"?",meta=data.meta||{},fd=data.fd||{},scores=data.scores||{},relScores=data.relScores||{},totals=data.totals||{},txs=data.txs||[],rels=data.relations||{},bf=data.blindFate||{},revDuels=data.revDuels||[];
+  var ranked=FO.slice().sort(function(a,b){return(totals[b]||0)-(totals[a]||0);});
+  var logoH=12;
+  try{var lr=await fetch((data.imgBase||"img/")+"alegra_logotyp_kolorowy.png");if(lr.ok){var lb=await lr.blob();var l64=await new Promise(function(res){var rd=new FileReader();rd.onload=function(){res(rd.result);};rd.readAsDataURL(lb);});doc.addImage(l64,"PNG",ML,Y,30,0);}}catch(e){}
+  setF("bold",20);setC(COL.dark);doc.text("Wschód Dzikiego Zachodu",ML+34,Y+logoH*0.65);
+  Y+=logoH+4;
+  setF("normal",11);setC(COL.textDim);doc.text("Raport z rozgrywki",ML,Y);Y+=10;
+  doc.setDrawColor(COL.line[0],COL.line[1],COL.line[2]);doc.setFillColor(COL.bg[0],COL.bg[1],COL.bg[2]);
+  var infoArr=["Kod: "+rc];if(meta.createdAt)infoArr.push("Data: "+new Date(meta.createdAt).toLocaleDateString("pl"));
+  var infoArr2=[];if(meta.client)infoArr2.push("Klient: "+meta.client);if(meta.group)infoArr2.push("Grupa: "+meta.group);
+  var boxH=infoArr2.length?18:12;doc.roundedRect(ML,Y,PW,boxH,2,2,"FD");
+  setF("normal",11);setC(COL.text);doc.text(infoArr.join("     |     "),ML+4,Y+5);
+  if(infoArr2.length)doc.text(infoArr2.join("     |     "),ML+4,Y+11);
+  Y+=boxH+8;
+  hd("Wyniki");
+  if(ranked.length>0){setF("bold",12);setC(COL.green);doc.text("Zwycięzca: "+FM[ranked[0]].nom+" \u2013 "+Math.round(totals[ranked[0]]||0)+" pkt",ML,Y);Y+=8;}
+  var rH=[["","Wynik","Zasoby\n/30","Kompetencje\n/25","Działka\n/10","Gotówka\n/25","Żyła\n/10","BnB","Relacje\n/20"]];
+  var rR=ranked.map(function(f){var s=scores[f]||{};return[FM[f].nom,Math.round(totals[f]||0)+" pkt",s.resScore+" ("+(s.resPct||0)+"%)",s.compScore+" ("+(s.compPct||0)+"%)",s.plotScore||0,s.cashScore+" ("+(s.cash||0)+"$)",s.mapScore||0,s.bnb||0,relScores[f]||0];});
+  doc.autoTable({startY:Y,head:rH,body:rR,margin:{left:ML,right:MR},styles:{font:FONT,fontSize:9,cellPadding:2,halign:"center",valign:"middle"},headStyles:{fillColor:COL.dark,textColor:COL.white,fontStyle:"bold",fontSize:8},columnStyles:{0:{halign:"left",fontStyle:"bold"},1:{fontStyle:"bold"}},alternateRowStyles:{fillColor:[250,245,238]},didParseCell:function(d2){if(d2.section==="body"&&d2.column.index===0){var f=ranked[d2.row.index];if(f&&COL.families[f])d2.cell.styles.textColor=COL.families[f];}}});
+  Y=doc.lastAutoTable.finalY+8;
+  hd("Macierz handlu");
+  var tradeTx=txs.filter(function(t){return t&&t.status==="accepted"&&FO.includes(t.from)&&FO.includes(t.to)&&(t.type==="sale"||t.type==="barter");});
+  if(tradeTx.length>0){
+    var mH=[["Od \\ Do"].concat(FO.map(function(f){return FM[f].nom;}))];
+    var mR=FO.map(function(from){var cells=FO.map(function(to){if(from===to)return"\u2013";var it=0,ca=0;tradeTx.forEach(function(tx){if(tx.from===from&&tx.to===to){it+=(tx.offeredItems||tx.offerItems||[]).length;ca+=(tx.offeredCash||tx.offerCash||0);}if(tx.to===from&&tx.from===to){it+=(tx.requestItems||tx.responseItems||[]).length;ca+=(tx.requestCash||tx.responseCash||0)+(tx.type==="sale"?(tx.price||0):0);}});if(it===0&&ca===0)return"\u2013";return(it>0?it+"k":"")+(it>0&&ca>0?" + ":"")+(ca>0?ca+"$":"");});return[FM[from].nom].concat(cells);});
+    doc.autoTable({startY:Y,head:mH,body:mR,margin:{left:ML,right:MR},styles:{font:FONT,fontSize:9,cellPadding:2,halign:"center",valign:"middle"},headStyles:{fillColor:COL.dark,textColor:COL.white,fontStyle:"bold",fontSize:9},columnStyles:{0:{halign:"left",fontStyle:"bold"}},alternateRowStyles:{fillColor:[250,245,238]}});
+    Y=doc.lastAutoTable.finalY+4;bt("Legenda: k = liczba kart, $ = gotówka przekazana w transakcji",{size:8,color:COL.textDim});
+  } else { bt("Brak zaakceptowanych transakcji."); }
+  Y+=4;
+  hd("Statystyki transakcji");
+  var ps={};txs.forEach(function(t){if(!t||!t.from||!t.to||!FO.includes(t.from)||!FO.includes(t.to))return;if(t.type!=="sale"&&t.type!=="barter")return;var k=[t.from,t.to].sort().join("-");if(!ps[k])ps[k]={a:0,r:0};if(t.status==="accepted")ps[k].a++;else if(t.status==="rejected")ps[k].r++;});
+  var pk=Object.keys(ps);
+  if(pk.length>0){
+    var pH=[["Para","Zaakceptowane","Odrzucone","Łącznie"]];
+    var pR=pk.map(function(k){var p=k.split("-"),d=ps[k];return[FM[p[0]].nom+" \u2013 "+FM[p[1]].nom,d.a,d.r,d.a+d.r];});
+    var ta=pk.reduce(function(s,k){return s+ps[k].a;},0),tr=pk.reduce(function(s,k){return s+ps[k].r;},0);
+    pR.push(["RAZEM",ta,tr,ta+tr]);
+    doc.autoTable({startY:Y,head:pH,body:pR,margin:{left:ML,right:MR},styles:{font:FONT,fontSize:9,cellPadding:2,halign:"center"},headStyles:{fillColor:COL.dark,textColor:COL.white,fontStyle:"bold"},columnStyles:{0:{halign:"left"}},alternateRowStyles:{fillColor:[250,245,238]},didParseCell:function(d2){if(d2.section==="body"&&d2.row.index===pR.length-1)d2.cell.styles.fontStyle="bold";}});
+    Y=doc.lastAutoTable.finalY+8;
+  } else { bt("Brak transakcji."); Y+=4; }
+  hd("Relacje");
+  var anyRel=false;FO.forEach(function(rater){if(rels[rater])FO.forEach(function(rated){if(rater!==rated&&rels[rater][rated])anyRel=true;});});
+  if(anyRel){
+    var rlH=[["Od rodziny "+ARROW+"Dla rodziny","Partnerstwo","Zasady","Komunikacja","Suma /15"]];var rlR=[];
+    FO.forEach(function(rater){FO.forEach(function(rated){if(rater===rated)return;var r=rels[rater]&&rels[rater][rated];if(!r)return;var tot=(r.partnership||0)+(r.rules||0)+(r.communication||0);rlR.push([FM[rater].nom+" "+ARROW+" "+FM[rated].nom,r.partnership||0,r.rules||0,r.communication||0,tot]);});});
+    doc.autoTable({startY:Y,head:rlH,body:rlR,margin:{left:ML,right:MR},styles:{font:FONT,fontSize:9,cellPadding:2,halign:"center"},headStyles:{fillColor:COL.dark,textColor:COL.white,fontStyle:"bold"},columnStyles:{0:{halign:"left"}},alternateRowStyles:{fillColor:[250,245,238]}});
+    Y=doc.lastAutoTable.finalY+8;
+  } else { bt("Brak danych o relacjach."); Y+=4; }
+  hd("Ślepy Los");
+  var anyFate=false;
+  FO.forEach(function(fId){var bfd=bf[fId];if(!bfd||!bfd.rolls)return;var rolls=(Array.isArray(bfd.rolls)?bfd.rolls:Object.values(bfd.rolls)).filter(function(r){return r&&r.resolved;});if(!rolls.length)return;anyFate=true;chk(12+rolls.length*6);setF("bold",10);setC(COL.families[fId]||COL.text);doc.text(FM[fId].nom+":",ML,Y);Y+=5;rolls.forEach(function(r){var ev=r.event||{};var eff=r.netEffectText||(ev.amount?(ev.amount>0?"+":"")+ev.amount+" $":"brak efektu");setF("normal",10);setC(COL.text);var ln="    Wynik "+(r.sum||"?")+" \u2013 "+(ev.text||"\u2013")+" "+ARROW+" "+eff;var wr=doc.splitTextToSize(ln,PW-8);doc.text(wr,ML+4,Y);Y+=wr.length*4.5;});Y+=3;});
+  if(!anyFate){bt("Brak rzutów.");Y+=4;}
+  if(data.bnbEnabled&&fd){
+    hd("Biznes na Boku");
+    var bH=[["Rodzina","Produkt","Sprzedano","Kupiono od innych"]];
+    var bR=FO.map(function(fId){var items=(fd[fId]||{}).items||[];if(!Array.isArray(items))items=Object.values(items);var bnbAll=items.filter(function(i){return i.cat===C_BNB;});var prod=BNB_PRODUCTS[fId];var ownLeft=bnbAll.filter(function(i){return i.bnbOrigin===fId||i.name===prod.name;}).length;var sold=prod.qty-ownLeft;var bought=bnbAll.filter(function(i){return i.bnbOrigin!==fId&&i.name!==prod.name;}).length;return[FM[fId].nom,prod.shortName,sold+"/"+prod.qty,bought];});
+    doc.autoTable({startY:Y,head:bH,body:bR,margin:{left:ML,right:MR},styles:{font:FONT,fontSize:9,cellPadding:2,halign:"center"},headStyles:{fillColor:COL.dark,textColor:COL.white,fontStyle:"bold"},columnStyles:{0:{halign:"left"},1:{halign:"left"}},alternateRowStyles:{fillColor:[250,245,238]}});
+    Y=doc.lastAutoTable.finalY+8;
+  }
+  if(data.mapEnabled&&fd){
+    hd("Złotodajna Żyła");
+    var mbc=data.mapBonusClaimed||{};var mw=null;FO.forEach(function(f){if(mbc[f])mw=f;});
+    var zpH=[["Rodzina","Fragmenty mapy","Bonus pkt","Rozliczenie"]];
+    var zpR=FO.map(function(fId){var items=(fd[fId]||{}).items||[];if(!Array.isArray(items))items=Object.values(items);var fs2={};items.forEach(function(i){if(i.cat===C_MAP)fs2[i.fragNr]=true;});var cnt=Object.keys(fs2).length;var sc=scores[fId]||{};var sett=mw===fId?"+300 $":(mw?"-100 $":"0 $");return[FM[fId].nom,cnt+"/4",sc.mapScore+"/10",sett];});
+    doc.autoTable({startY:Y,head:zpH,body:zpR,margin:{left:ML,right:MR},styles:{font:FONT,fontSize:9,cellPadding:2,halign:"center"},headStyles:{fillColor:COL.dark,textColor:COL.white,fontStyle:"bold"},columnStyles:{0:{halign:"left"}},alternateRowStyles:{fillColor:[250,245,238]},didParseCell:function(d2){if(d2.section==="body"&&d2.column.index===3){var v=d2.cell.raw;if(v&&v.includes("+"))d2.cell.styles.textColor=COL.green;else if(v&&v.includes("-"))d2.cell.styles.textColor=COL.red;}}});
+    Y=doc.lastAutoTable.finalY+4;
+    if(mw)bt("Zwycięzca wyścigu: "+FM[mw].nom+" (premia 300 $, pozostali wpłacają 100 $)",{style:"bold",size:10});
+    else bt("Brak zwycięzcy wyścigu \u2013 nikt nie zebrał kompletnej mapy lub remis.",{size:10,color:COL.textDim});
+    Y+=4;
+  }
+  if(data.revEnabled&&revDuels.length>0){
+    hd("Rewolwerowiec");
+    var rvH=[["Nr","Wyzywający","Przeciwnik","Stawka","Zwycięzca"]];
+    var rvR=revDuels.filter(function(d){return d;}).map(function(d,i){return[i+1,(FM[d.challenger]||{}).nom||"?",(FM[d.opponent]||{}).nom||"?",(d.bet||0)+" $",(FM[d.winner]||{}).nom||"?"];});
+    doc.autoTable({startY:Y,head:rvH,body:rvR,margin:{left:ML,right:MR},styles:{font:FONT,fontSize:9,cellPadding:2,halign:"center"},headStyles:{fillColor:COL.dark,textColor:COL.white,fontStyle:"bold"},alternateRowStyles:{fillColor:[250,245,238]}});
+    Y=doc.lastAutoTable.finalY+8;
+  }
+  var tp=doc.internal.getNumberOfPages();
+  for(var p=1;p<=tp;p++){doc.setPage(p);setF("normal",8);setC(COL.textDim);doc.text("Strona "+p+" / "+tp,210-MR,FOOTER_Y+5,{align:"right"});doc.text("aleGRA Twórczy Rozwój \u2013 Wschód Dzikiego Zachodu\u00A9 Online",105,FOOTER_Y+5,{align:"center"});}
+  var ds=meta.createdAt?new Date(meta.createdAt).toISOString().slice(0,10):new Date().toISOString().slice(0,10);
+  doc.save("wdz-raport-"+rc+"-"+ds+".pdf");
+}
 
 
 /* ===== STAŁE ===== */
@@ -694,7 +809,7 @@ function gCalcScores(fd, relations, plotPenalties, mapEnabled, bnbEnabled, blind
 /* ===== buildReportData – jedno źródło danych dla ReportView (JSX) i raportów (TXT/PDF) ===== */
 function buildReportData(raw){
   var fd=raw.fd||{}, txs=raw.txs||[], blindFate=raw.blindFate||{}, relations=raw.relations||{};
-  var bnbEnabled=raw.bnbEnabled||false, mapEnabled=raw.mapEnabled||false, fateEnabled=raw.fateEnabled||false;
+  var bnbEnabled=raw.bnbEnabled||false, mapEnabled=raw.mapEnabled!==false, fateEnabled=raw.fateEnabled||false;
   var revEnabled=raw.revEnabled||false, relationsUnlocked=raw.relationsUnlocked||false;
   var revDuels=raw.revDuels||[], plotPenalties=raw.plotPenalties||{}, biznesNaBoku=raw.biznesNaBoku||{};
   var mapBonusClaimed=raw.mapBonusClaimed||{}, sheriffCalls=raw.sheriffCalls||[], consultNotes=raw.consultNotes||{};
@@ -790,7 +905,7 @@ function ReportView({roomCode, onClose}){
         biznesNaBoku: sp.biznesNaBoku||{},
         consultNotes: sp.consultNotes||{},
         bnbEnabled:   gs.bnbEnabled||false,
-        mapEnabled:   gs.mapEnabled||false,
+        mapEnabled:   gs.mapEnabled!==false,
         mapBonusClaimed: gs.mapBonusClaimed||{},
         relationsUnlocked: gs.relationsUnlocked||false,
         revEnabled:   gs.revEnabled||false,
@@ -1200,21 +1315,23 @@ function ReportView({roomCode, onClose}){
             <Btn small variant="ghost" onClick={()=>{
               if(!reportData) return;
               var rd=reportData;
-              var relSc={},tot={};
+              var pdfScores={},relSc={},tot={};
               FO.forEach(fId=>{
-                relSc[fId]=rd.scores[fId].relacje||0;
-                tot[fId]=rd.scores[fId].total||0;
+                var s=rd.scores[fId]||{};
+                relSc[fId]=s.relacje||0;
+                tot[fId]=s.total||0;
+                pdfScores[fId]={resScore:s.zasoby||0,resPct:s.resPct||0,compScore:s.kompetencje||0,compPct:s.compPct||0,plotScore:s.dzialka||0,plotOk:s.dzialka>0,cashScore:s.gotowka||0,cash:s.cash||0,mapScore:s.mapa||0,bnb:s.bnb||0,bnbKurier:0,bnbMikstura:0,bnbObligacje:0,bnbKwatera:0,bizTotal:(s.total||0)-(s.relacje||0)};
               });
               var si=data.sessionInfo||{};
               generateTrainerPDF({
                 roomCode:roomCode,imgBase:"img/",
                 meta:{createdAt:data.meta.createdAt||data.meta.created||Date.now(),client:si.klient||"",group:si.grupa||""},
-                fd:rd.fd,scores:rd.scores,relScores:relSc,totals:tot,
+                fd:rd.fd,scores:pdfScores,relScores:relSc,totals:tot,
                 txs:rd.txs,relations:rd.relations||{},blindFate:rd.blindFate||{},
                 bnbEnabled:rd.bnbEnabled,mapEnabled:rd.mapEnabled,revEnabled:rd.revEnabled,
                 mapBonusClaimed:rd.mapBonusClaimed||{},revDuels:rd.revDuels||[]
               }).catch(e=>{alert("Błąd PDF: "+e.message);});
-            }}>📄 Raport trenerski</Btn>
+            }}>📄 Raport z rozgrywki</Btn>
             <Btn small variant="ghost" onClick={()=>{
               if(!reportData) return;
               var rd=reportData;
@@ -1653,14 +1770,9 @@ function playAlertBeep() {
   } catch(e) { /* ignore audio errors */ }
 }
 
-/* ========== SCORE CALCULATOR – wrapper nad calcScore z wdz-shared.js ========== */
+/* ========== SCORE CALCULATOR – wrapper delegujący do kanonicznego calcScore ========== */
 function monCalcScore(fId, fd, biznesNaBoku, bnbEnabled, blindFate, mapEnabled, mapBonusClaimed) {
-  var result = calcScore(fId, fd, blindFate, bnbEnabled, mapEnabled, mapBonusClaimed);
-  if(!bnbEnabled && biznesNaBoku && biznesNaBoku[fId]) {
-    result.bnb = biznesNaBoku[fId];
-    result.bizTotal = result.bizTotal + biznesNaBoku[fId];
-  }
-  return result;
+  return calcScore(fId, fd, {}, biznesNaBoku, bnbEnabled, blindFate, mapEnabled, mapBonusClaimed);
 }
 
 /* ========== CHANGE DETECTION ========== */
@@ -2457,7 +2569,7 @@ function generateReport(roomCode, gameState, players, scores, txStats, phaseStat
       var ok = true;
       FO.forEach(fId => {
         var sc = scores[fId]; if(!sc) return;
-        var recalc = calcScore(fId, fd, gameState.blindFate||{}, gameState.bnbEnabled, gameState.mapEnabled!==false, gameState.mapBonusClaimed||{});
+        var recalc = calcScore(fId, fd, {}, gameState.biznesNaBoku||{}, gameState.bnbEnabled, gameState.blindFate||{}, gameState.mapEnabled!==false, gameState.mapBonusClaimed||{});
         if(recalc.bizTotal !== sc.bizTotal) { lines.push("  ⚠ " + FM[fId].nom + ": bizTotal monitor=" + sc.bizTotal + " vs przeliczony=" + recalc.bizTotal); ok=false; }
       });
       if(ok) lines.push("Wyniki: ✅ zgodne z przeliczeniem");
@@ -2818,7 +2930,7 @@ function MonitorView({roomCode: propCode, onClose}) {
     var fd = gameState.fd;
     var sc = {};
     FO.forEach(fId => {
-      sc[fId] = monCalcScore(fId, fd, gameState.biznesNaBoku || {}, gameState.bnbEnabled, gameState.blindFate || {}, gameState.mapEnabled, gameState.mapBonusClaimed || {});
+      sc[fId] = monCalcScore(fId, fd, gameState.biznesNaBoku || {}, gameState.bnbEnabled, gameState.blindFate || {}, gameState.mapEnabled!==false, gameState.mapBonusClaimed || {});
     });
     return sc;
   }, [gameState]);
@@ -2926,7 +3038,7 @@ function MonitorView({roomCode: propCode, onClose}) {
             var relSc = {};
             var tot = {};
             FO.forEach(fId => {
-              sc[fId] = monCalcScore(fId, fd, gameState.biznesNaBoku || {}, gameState.bnbEnabled, gameState.blindFate || {}, gameState.mapEnabled, gameState.mapBonusClaimed || {});
+              sc[fId] = monCalcScore(fId, fd, gameState.biznesNaBoku || {}, gameState.bnbEnabled, gameState.blindFate || {}, gameState.mapEnabled!==false, gameState.mapBonusClaimed || {});
               relSc[fId] = calcRelationScore(fId, gameState.relations || {});
               tot[fId] = Math.round(sc[fId].bizTotal + relSc[fId]);
             });
@@ -2946,8 +3058,8 @@ function MonitorView({roomCode: propCode, onClose}) {
                 revDuels: ensureArray(gameState.revDuels||[])
               });
             }).catch(e => { alert("Błąd PDF: "+e.message); console.error(e); });
-          }} title="Raport dla trenera (PDF)">📄</button>
-          <button style={S.btnSmall} onClick={() => window.open("wdz-simulator-v1_8_0.html", "_blank")} title="Otwórz symulator">🤖</button>
+          }} title="Raport z rozgrywki (PDF)">📄</button>
+          <button style={S.btnSmall} onClick={() => window.open("simulator.html", "_blank")} title="Otwórz symulator">🤖</button>
           <Btn small variant="ghost" onClick={() => { disconnectAll(); if(onClose) onClose(); }}>← Wróć</Btn>
         </div>
       </div>
@@ -3054,7 +3166,7 @@ function MonitorView({roomCode: propCode, onClose}) {
               {label:"Gra", on:gameState?.gameStarted},
               {label:"Timer", on:gameState?.timerRunning},
               {label:"Pauza", on:gameState?.timerPaused},
-              {label:"Mapa", on:gameState?.mapEnabled},
+              {label:"Żyła", on:gameState?.mapEnabled},
               {label:"Ślepy Los", on:gameState?.fateEnabled},
               {label:"BnB", on:gameState?.bnbEnabled},
               {label:"Rewolwerowiec", on:gameState?.revEnabled},
@@ -3323,7 +3435,7 @@ function MonitorView({roomCode: propCode, onClose}) {
             <table style={{width:"100%", borderCollapse:"collapse", fontSize:13}}>
               <thead>
                 <tr>
-                  <th style={{padding:"6px 8px", textAlign:"left", color:"#8A7A6A", borderBottom:"1px solid #3C2820"}}>Oceniający ↓ / Oceniany →</th>
+                  <th style={{padding:"6px 8px", textAlign:"left", color:"#8A7A6A", borderBottom:"1px solid #3C2820"}}>Od rodziny \u2193 / Dla rodziny \u2192</th>
                   {FO.map(fId => <th key={fId} style={{padding:"6px 8px", color:FM[fId].col, borderBottom:"1px solid #3C2820", textAlign:"center"}}>{FM[fId].nom}</th>)}
                 </tr>
               </thead>

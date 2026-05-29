@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WDZ Test Simulator</title>
+<link href="https://fonts.googleapis.com/css2?family=Alegreya+Sans:wght@400;500;700;900&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<link rel="stylesheet" href="./src/simulator/styles.css">
+</head>
+<body>
+<div style="background:linear-gradient(135deg,#4C130F 0%,#300904 50%,#4C130F 100%);padding:10px 20px;display:flex;align-items:center;gap:14px;border-bottom:2px solid #842504">
+  <img src="https://kkondracki-jpg.github.io/wdz-online/img/alegra_logotyp.png" alt="aleGRA" style="height:40px;width:auto">
+  <div style="flex:1">
+    <div style="font-size:20px;font-weight:900;color:#D4A853;letter-spacing:1px;line-height:1.1;font-family:'Alegreya Sans',sans-serif">Wschód Dzikiego Zachodu<sup style="font-size:10px;font-weight:400">©</sup> Online</div>
+    <div style="font-size:12px;color:#C4B090;margin-top:1px">Symulator testowy</div>
+  </div>
+  <div style="font-size:11px;color:#8B7355">v1.8.0</div>
+</div>
+<div class="container">
+  <div class="controls">
+    <h2>Ustawienia symulacji</h2>
+    <div class="row">
+      <label>Tryb:</label>
+      <select id="mode">
+        <option value="smoke">Smoke test (2 rundy/turę) – szybka walidacja mechanik</option>
+        <option value="realistic" selected>Realistyczny (3 rundy/turę) – zbliżony do realnej gry</option>
+        <option value="stress">Stress test (5 rund/turę) – maksymalne obciążenie</option>
+      </select>
+    </div>
+    <div class="row">
+      <label class="cb"><input type="checkbox" id="bnb" checked> Biznes na Boku</label>
+      <label class="cb"><input type="checkbox" id="fate" checked> Ślepy Los</label>
+      <label class="cb"><input type="checkbox" id="map" checked> Złotodajna Żyła</label>
+      <label class="cb"><input type="checkbox" id="rev"> Rewolwerowiec</label>
+    </div>
+
+    <hr class="section-sep">
+    <div style="font-size:13px;font-weight:700;color:#5C4A3A;margin-bottom:6px">Osobowości botów</div>
+    <div class="personality-grid">
+      <div class="personality-card" style="border-color:#A75F4A"><div style="color:#A75F4A;font-weight:700">Adams</div><select id="pers_adams"><option value="random">Losowa</option><option value="rational">Racjonalny</option><option value="aggressive">Agresywny</option><option value="cautious">Zachowawczy</option><option value="gambler">Hazardzista</option></select></div>
+      <div class="personality-card" style="border-color:#726072"><div style="color:#726072;font-weight:700">Bennet</div><select id="pers_bennet"><option value="random">Losowa</option><option value="rational">Racjonalny</option><option value="aggressive">Agresywny</option><option value="cautious">Zachowawczy</option><option value="gambler">Hazardzista</option></select></div>
+      <div class="personality-card" style="border-color:#5E5971"><div style="color:#5E5971;font-weight:700">Clinton</div><select id="pers_clinton"><option value="random">Losowa</option><option value="rational">Racjonalny</option><option value="aggressive">Agresywny</option><option value="cautious">Zachowawczy</option><option value="gambler">Hazardzista</option></select></div>
+      <div class="personality-card" style="border-color:#5B7674"><div style="color:#5B7674;font-weight:700">Dexter</div><select id="pers_dexter"><option value="random">Losowa</option><option value="rational">Racjonalny</option><option value="aggressive">Agresywny</option><option value="cautious">Zachowawczy</option><option value="gambler">Hazardzista</option></select></div>
+    </div>
+
+    <hr class="section-sep">
+    <div class="row">
+      <button class="btn btn-primary" id="btnLocal" onclick="runLocal()">▶ Symulacja lokalna</button>
+      <span style="color:#8B7355;font-size:13px;margin:0 8px">|</span>
+      <label>Monte Carlo N=</label>
+      <input type="number" id="mcRuns" value="50" min="2" max="500" style="width:60px">
+      <button class="btn btn-primary" id="btnMC" onclick="runMC()" style="background:#5C3828">▶ Monte Carlo</button>
+      <button class="btn btn-stop" id="btnStop" onclick="stopSim()" disabled>■ Stop</button>
+    </div>
+    <div class="info" style="margin-bottom:12px">
+      <b>Lokalna:</b> cała logika w pamięci – testuje poprawność mechanik (~0.05s)
+    </div>
+    <div class="fb-box">
+      <div style="font-size:14px;font-weight:700;color:#2C1810;margin-bottom:8px">Symulacja Firebase (na żywo)</div>
+      <div class="info" style="margin-top:0;margin-bottom:10px">
+        1. Otwórz grę → zaloguj się jako Owner → utwórz rozgrywkę<br>
+        2. Skopiuj kod rozgrywki i wklej poniżej<br>
+        3. Boty dołączą i zaczną handlować – obserwuj w panelu Szeryfa
+      </div>
+      <div class="row">
+        <label>Kod rozgrywki:</label>
+        <input type="text" id="fbRoomCode" placeholder="WDZ-XXXXXX" style="width:160px;font-family:monospace;font-size:15px;letter-spacing:2px;text-transform:uppercase;border:1px solid #D4C4A8;border-radius:4px;padding:8px 12px;background:#fff;color:#2C1810">
+        <button class="btn btn-firebase" id="btnFirebase" onclick="runFirebase()">▶ Start botów</button>
+      </div>
+    </div>
+    <div id="roomInfo" style="margin-top:12px;display:none">
+      <label>Aktywna rozgrywka:</label> <span class="room-code" id="roomCodeDisplay">-</span>
+    </div>
+  </div>
+
+  <div id="statusBar" class="status"></div>
+
+  <div id="resultsPanel" class="results">
+    <h2>Wyniki końcowe</h2>
+    <table class="score-table">
+      <thead><tr><th>Rodzina</th><th>Punkty</th><th>Zasoby</th><th>Kompet.</th><th>Działka</th><th>Kasa</th><th>Żyła</th><th>Relacje</th><th style="width:25%"></th></tr></thead>
+      <tbody id="scoreBody"></tbody>
+    </table>
+    <div id="validationInfo" style="margin-top:12px;font-size:13px;color:#5C4A3A"></div>
+  </div>
+
+  <div id="mcPanel" class="results">
+    <h2>Monte Carlo – wyniki z <span id="mcN">0</span> symulacji</h2>
+    <div id="mcWins" style="margin-bottom:12px"></div>
+    <table class="mc-stats" id="mcTable">
+      <thead><tr><th>Rodzina</th><th>Śr. pkt</th><th>Min</th><th>Max</th><th>Mediana</th><th>Śr. zasoby</th><th>Śr. komp.</th><th>Śr. kasa</th><th>Wygrane</th><th>Rozkład</th></tr></thead>
+      <tbody id="mcBody"></tbody>
+    </table>
+    <div id="mcValidation" style="margin-top:12px;font-size:13px"></div>
+    <button id="mcExport" class="btn btn-primary" style="margin-top:12px;display:none;background:#5C3828">📋 Eksportuj raport MC</button>
+  </div>
+
+  <div id="flowPanel" class="results">
+    <h2>Przepływ kart</h2>
+    <div id="flowBody" style="font-size:12px;max-height:400px;overflow-y:auto"></div>
+  </div>
+
+  <div id="duelPanel" class="results">
+    <h2 class="wt">Rewolwerowiec – historia pojedynków</h2>
+    <div id="duelBody" style="font-size:13px"></div>
+  </div>
+
+  <div id="fatePanel" class="results">
+    <h2 class="wt">Ślepy Los – szczegóły rzutów</h2>
+    <div id="fateBody" style="font-size:13px"></div>
+  </div>
+
+  <div class="log-area" id="logArea">Gotowy. Kliknij przycisk aby rozpocząć symulację.\n</div>
+</div>
+<script type="module" src="./src/simulator/main.js"></script>
+</body>
+</html>
