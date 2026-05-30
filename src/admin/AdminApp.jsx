@@ -502,16 +502,22 @@ function TicketsView({trainers: allTrainers}) {
   const [deleting, setDeleting] = useState(null);
   const [confirmClear, setConfirmClear] = useState(false);
 
-  useEffect(() => {
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  function loadTickets() {
     if (!db) return;
-    var tRef = db.ref("tickets");
-    var tCb = tRef.on("value", snap => {
+    db.ref("tickets").once("value").then(snap => {
       setLoading(false);
       var arr = [];
       if (snap.exists()) snap.forEach(c => arr.push({id:c.key,...c.val()}));
       arr.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
       setTickets(arr);
     });
+  }
+
+  useEffect(() => {
+    loadTickets();
+    if (!db) return;
     var rRef = db.ref("rooms");
     var rCb = rRef.on("value", snap => {
       var map = {};
@@ -523,8 +529,8 @@ function TicketsView({trainers: allTrainers}) {
       });
       setRoomStatuses(map);
     });
-    return () => { tRef.off("value", tCb); rRef.off("value", rCb); };
-  }, []);
+    return () => { rRef.off("value", rCb); };
+  }, [refreshKey]);
 
   function handleCreateTicket() {
     if (!selTrainer) { setErr("Wybierz trenera."); return; }
@@ -543,6 +549,7 @@ function TicketsView({trainers: allTrainers}) {
       setGenerated({id: ref.key, roomCode: wdzCode, sheriffCode: wdzCode});
       setSelTrainer("");
       setShowForm(false);
+      loadTickets();
     }).catch(e => { setSaving(false); setErr("Błąd zapisu: " + e.message); });
   }
 
@@ -564,12 +571,12 @@ function TicketsView({trainers: allTrainers}) {
   function deleteTicket(id) {
     setDeleting(id);
     db.ref("tickets/" + id).remove()
-      .then(()=>setDeleting(null))
+      .then(()=>{setDeleting(null);loadTickets();})
       .catch(e=>{setDeleting(null);alert("Błąd usuwania: "+e.message);});
   }
   function deleteAllTickets() {
     setConfirmClear(false);
-    db.ref("tickets").remove().catch(e=>alert("Błąd usuwania: "+e.message));
+    db.ref("tickets").remove().then(()=>loadTickets()).catch(e=>alert("Błąd usuwania: "+e.message));
   }
 
   // Group by trainer
