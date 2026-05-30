@@ -501,6 +501,7 @@ function TicketsView({trainers: allTrainers}) {
   const [generated, setGenerated] = useState(null);
   const [deleting, setDeleting] = useState(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [expanded, setExpanded] = useState({});
 
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -675,11 +676,15 @@ function TicketsView({trainers: allTrainers}) {
       {trainerIds.map(tid => {
         var g = grouped[tid];
         var s = summary(g.tickets);
+        var isOpen = expanded[tid] !== false;
         return (
           <Card key={tid} style={{marginBottom:10, padding:0, overflow:"hidden"}}>
-            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center",
-                padding:"12px 18px", background:"#3C2820"}}>
+            <div onClick={()=>setExpanded(p=>({...p,[tid]:!isOpen}))}
+              style={{display:"flex", justifyContent:"space-between", alignItems:"center",
+                padding:"12px 18px", cursor:"pointer", background:"#3C2820",
+                transition:"background 0.15s"}}>
               <div style={{display:"flex", alignItems:"center", gap:12}}>
+                <span style={{fontSize:13,color:C.textMut}}>{isOpen?"▼":"▶"}</span>
                 <span style={{fontSize:15, fontWeight:700, color:C.text}}>{g.name}</span>
                 <span style={{fontSize:12, color:C.textMut}}>
                   {s.total} {s.total===1?"bilet":s.total<5?"bilety":"biletów"}
@@ -691,28 +696,30 @@ function TicketsView({trainers: allTrainers}) {
                 {s.done>0 && <span style={{fontSize:12,color:C.textMut}}>● {s.done} zakończonych</span>}
               </div>
             </div>
-            <div style={{padding:"0 18px 12px"}}>
-              {g.tickets.map(t => (
-                <div key={t.id} style={{display:"flex", alignItems:"center", gap:14,
-                  padding:"10px 0", borderTop:"1px solid "+C.border}}>
-                  <div style={{display:"flex",alignItems:"center",gap:6,minWidth:170}}>
-                    <span style={{fontFamily:"monospace",fontSize:16,fontWeight:900,color:C.gold,letterSpacing:2}}>
-                      {t.sheriffCode||"–"}
-                    </span>
-                    {t.sheriffCode&&<span onClick={(e)=>{e.stopPropagation();navigator.clipboard.writeText(t.sheriffCode);}}
-                      style={{cursor:"pointer",fontSize:11,color:C.textMut,textDecoration:"underline"}}>kopiuj</span>}
+            {isOpen && (
+              <div style={{padding:"0 18px 12px"}}>
+                {g.tickets.map(t => (
+                  <div key={t.id} style={{display:"flex", alignItems:"center", gap:14,
+                    padding:"10px 0", borderTop:"1px solid "+C.border}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6,minWidth:170}}>
+                      <span style={{fontFamily:"monospace",fontSize:16,fontWeight:900,color:C.gold,letterSpacing:2}}>
+                        {t.sheriffCode||"–"}
+                      </span>
+                      {t.sheriffCode&&<span onClick={(e)=>{e.stopPropagation();navigator.clipboard.writeText(t.sheriffCode);}}
+                        style={{cursor:"pointer",fontSize:11,color:C.textMut,textDecoration:"underline"}}>kopiuj</span>}
+                    </div>
+                    <div style={{flex:1,fontSize:12,color:C.textMut}}>
+                      {formatDate(t.createdAt)}
+                    </div>
+                    <Badge color={tStatusColor(t)}>{tStatus(t)}</Badge>
+                    <Btn small variant="danger" disabled={deleting===t.id}
+                      onClick={(e)=>{e.stopPropagation();deleteTicket(t.id);}}>
+                      {deleting===t.id ? "…" : "Usuń"}
+                    </Btn>
                   </div>
-                  <div style={{flex:1,fontSize:12,color:C.textMut}}>
-                    {formatDate(t.createdAt)}
-                  </div>
-                  <Badge color={tStatusColor(t)}>{tStatus(t)}</Badge>
-                  <Btn small variant="danger" disabled={deleting===t.id}
-                    onClick={(e)=>{e.stopPropagation();deleteTicket(t.id);}}>
-                    {deleting===t.id ? "…" : "Usuń"}
-                  </Btn>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </Card>
         );
       })}
