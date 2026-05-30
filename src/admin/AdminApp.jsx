@@ -316,16 +316,14 @@ function RoomsView({onOpenReport}) {
 
   useEffect(() => {
     if (!db) return;
-    // Load tickets to cross-reference sheriffCode
-    var tRef = db.ref("tickets");
-    var tCb = tRef.on("value", snap => {
+    // Load tickets to cross-reference sheriffCode (jednorazowy odczyt)
+    db.ref("tickets").once("value").then(snap => {
       if(!snap.exists()){setTickets({});return;}
       var map={};
       snap.forEach(child => {
         var t=child.val();
         if(t.roomCode) map[t.roomCode] = t.sheriffCode || "";
       });
-      console.log("[WDZ-DEBUG] RoomsView tickets listener, count:", Object.keys(map).length);
       setTickets(map);
     });
     var ref = db.ref("rooms");
@@ -349,7 +347,7 @@ function RoomsView({onOpenReport}) {
       arr.sort((a,b) => (b.created||0) - (a.created||0));
       setRooms(arr);
     });
-    return () => { ref.off("value", cb); tRef.off("value", tCb); };
+    return () => { ref.off("value", cb); };
   }, []);
 
   function deleteRoom(code) {
@@ -511,7 +509,6 @@ function TicketsView({trainers: allTrainers}) {
       setLoading(false);
       var arr = [];
       if (snap.exists()) snap.forEach(c => arr.push({id:c.key,...c.val()}));
-      console.log("[WDZ-DEBUG] tickets listener fired, count:", arr.length, arr.map(t => t.sheriffCode));
       arr.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
       setTickets(arr);
     });
