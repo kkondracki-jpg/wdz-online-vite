@@ -502,7 +502,6 @@ function TicketsView({trainers: allTrainers}) {
   const [generated, setGenerated] = useState(null);
   const [deleting, setDeleting] = useState(null);
   const [confirmClear, setConfirmClear] = useState(false);
-  const [expanded, setExpanded] = useState({});
 
   useEffect(() => {
     if (!db) return;
@@ -666,13 +665,10 @@ function TicketsView({trainers: allTrainers}) {
       {trainerIds.map(tid => {
         var g = grouped[tid];
         var s = summary(g.tickets);
-        var isOpen = !!expanded[tid];
         return (
           <Card key={tid} style={{marginBottom:10, padding:0, overflow:"hidden"}}>
-            <div onClick={()=>setExpanded(p=>({...p,[tid]:!p[tid]}))}
-              style={{display:"flex", justifyContent:"space-between", alignItems:"center",
-                padding:"12px 18px", cursor:"pointer", background:isOpen?"#3C2820":"transparent",
-                transition:"background 0.15s"}}>
+            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center",
+                padding:"12px 18px", background:"#3C2820"}}>
               <div style={{display:"flex", alignItems:"center", gap:12}}>
                 <span style={{fontSize:15, fontWeight:700, color:C.text}}>{g.name}</span>
                 <span style={{fontSize:12, color:C.textMut}}>
@@ -683,33 +679,30 @@ function TicketsView({trainers: allTrainers}) {
                 {s.active>0 && <span style={{fontSize:12,color:C.greenLt}}>● {s.active} aktywnych</span>}
                 {s.inGame>0 && <span style={{fontSize:12,color:C.gold}}>● {s.inGame} w grze</span>}
                 {s.done>0 && <span style={{fontSize:12,color:C.textMut}}>● {s.done} zakończonych</span>}
-                <span style={{fontSize:13,color:C.textMut,marginLeft:4}}>{isOpen?"▲":"▼"}</span>
               </div>
             </div>
-            {isOpen && (
-              <div style={{padding:"0 18px 12px"}}>
-                {g.tickets.map(t => (
-                  <div key={t.id} style={{display:"flex", alignItems:"center", gap:14,
-                    padding:"10px 0", borderTop:"1px solid "+C.border}}>
-                    <div style={{display:"flex",alignItems:"center",gap:6,minWidth:170}}>
-                      <span style={{fontFamily:"monospace",fontSize:16,fontWeight:900,color:C.gold,letterSpacing:2}}>
-                        {t.sheriffCode||"–"}
-                      </span>
-                      {t.sheriffCode&&<span onClick={(e)=>{e.stopPropagation();navigator.clipboard.writeText(t.sheriffCode);}}
-                        style={{cursor:"pointer",fontSize:11,color:C.textMut,textDecoration:"underline"}}>kopiuj</span>}
-                    </div>
-                    <div style={{flex:1,fontSize:12,color:C.textMut}}>
-                      {formatDate(t.createdAt)}
-                    </div>
-                    <Badge color={tStatusColor(t)}>{tStatus(t)}</Badge>
-                    <Btn small variant="danger" disabled={deleting===t.id}
-                      onClick={(e)=>{e.stopPropagation();deleteTicket(t.id);}}>
-                      {deleting===t.id ? "…" : "Usuń"}
-                    </Btn>
+            <div style={{padding:"0 18px 12px"}}>
+              {g.tickets.map(t => (
+                <div key={t.id} style={{display:"flex", alignItems:"center", gap:14,
+                  padding:"10px 0", borderTop:"1px solid "+C.border}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,minWidth:170}}>
+                    <span style={{fontFamily:"monospace",fontSize:16,fontWeight:900,color:C.gold,letterSpacing:2}}>
+                      {t.sheriffCode||"–"}
+                    </span>
+                    {t.sheriffCode&&<span onClick={(e)=>{e.stopPropagation();navigator.clipboard.writeText(t.sheriffCode);}}
+                      style={{cursor:"pointer",fontSize:11,color:C.textMut,textDecoration:"underline"}}>kopiuj</span>}
                   </div>
-                ))}
-              </div>
-            )}
+                  <div style={{flex:1,fontSize:12,color:C.textMut}}>
+                    {formatDate(t.createdAt)}
+                  </div>
+                  <Badge color={tStatusColor(t)}>{tStatus(t)}</Badge>
+                  <Btn small variant="danger" disabled={deleting===t.id}
+                    onClick={(e)=>{e.stopPropagation();deleteTicket(t.id);}}>
+                    {deleting===t.id ? "…" : "Usuń"}
+                  </Btn>
+                </div>
+              ))}
+            </div>
           </Card>
         );
       })}
@@ -3059,7 +3052,6 @@ function MonitorView({roomCode: propCode, onClose}) {
               });
             }).catch(e => { alert("Błąd PDF: "+e.message); console.error(e); });
           }} title="Raport z rozgrywki (PDF)">📄</button>
-          <button style={S.btnSmall} onClick={() => window.open("simulator.html", "_blank")} title="Otwórz symulator">🤖</button>
           <Btn small variant="ghost" onClick={() => { disconnectAll(); if(onClose) onClose(); }}>← Wróć</Btn>
         </div>
       </div>
@@ -3630,7 +3622,6 @@ function MonitorTab() {
 
   var playing = rooms.filter(r => r.status === "playing");
   var lobby = rooms.filter(r => r.status === "lobby");
-  var finished = rooms.filter(r => r.status === "finished" || r.status === "expired");
 
   // Auto-connect: jeśli dokładnie 1 aktywna rozgrywka, podłącz automatycznie
   if(!loading && playing.length === 1 && !selectedRoom) {
@@ -3690,18 +3681,7 @@ function MonitorTab() {
         </div>
       )}
 
-      {finished.length > 0 && (
-        <div style={{marginBottom:24}}>
-          <div style={{fontSize:14, fontWeight:700, color:C.textMut, marginBottom:10, letterSpacing:0.5}}>
-            ZAKOŃCZONE ({finished.length})
-          </div>
-          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:12}}>
-            {finished.map(r => <RoomCard key={r.code} r={r} />)}
-          </div>
-        </div>
-      )}
-
-      {!loading && rooms.length === 0 && (
+      {!loading && playing.length === 0 && lobby.length === 0 && (
         <Card><div style={{textAlign:"center", color:C.textMut, padding:40, fontSize:15}}>Oczekiwanie na rozgrywkę</div></Card>
       )}
     </div>
@@ -3792,6 +3772,7 @@ function AdminApp() {
     {id:"trainers", label:"Trenerzy"},
     {id:"tickets",  label:"Bilety"},
     {id:"stats",    label:"Statystyki"},
+    {id:"simulator",label:"Symulator"},
   ];
 
   return (
@@ -3815,7 +3796,10 @@ function AdminApp() {
       <div style={{background:C.panel, borderBottom:"1px solid "+C.border}}>
         <div style={{maxWidth:1100, margin:"0 auto", display:"flex", gap:0}}>
           {tabs.map(t => (
-            <button key={t.id} onClick={() => { setTab(t.id); if(t.id==="tickets"||t.id==="trainers") loadTrainers(); }} style={{
+            <button key={t.id} onClick={() => {
+              if(t.id==="simulator"){ window.open("simulator.html","_blank"); return; }
+              setTab(t.id); if(t.id==="tickets"||t.id==="trainers") loadTrainers();
+            }} style={{
               padding:"14px 24px", fontSize:15, fontWeight: tab===t.id ? 700 : 400,
               color: tab===t.id ? C.gold : C.textDim,
               background:"transparent", border:"none",
