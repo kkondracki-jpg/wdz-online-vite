@@ -3,8 +3,8 @@
  * Zero logic changes – only import/export adaptation.
  */
 import React from "react";
-import { FM, FO, C_RES, C_COMP, C_PLOT, C_MAP, C_BNB, STAGES, BNB_PRODUCTS } from "../game/constants.js";
-import { ensureArray } from "../utils/index.js";
+import { FM, FO, G_TASKS, C_RES, C_COMP, C_PLOT, C_MAP, C_BNB, STAGES, BNB_PRODUCTS } from "../game/constants.js";
+import { ensureArray, toSlug } from "../utils/index.js";
 import { calcScore, calcRelationScore } from "../game/scoring.js";
 import { jsPDF } from "jspdf";
 import "jspdf-autotable";
@@ -449,6 +449,31 @@ function fragName(nr) { return nr===1?"Adamsów":nr===2?"Bennetów":nr===3?"Clin
 function generateReport(roomCode, gameState, players, scores, txStats, phaseStats, eventLog, cashSnapshots, connHistory, elapsed, consultNotes) {
   var fd = gameState ? gameState.fd : null;
   var relData = gameState ? gameState.relations || {} : {};
+
+  // Normalizacja formatu scores – gCalcScores (zasoby/kompetencje) vs calcScore (resScore/compScore)
+  if(scores) {
+    var _ns = {};
+    FO.forEach(function(fId) {
+      var s = scores[fId]; if(!s) return;
+      _ns[fId] = {
+        resScore:   s.resScore  != null ? s.resScore  : (s.zasoby != null ? s.zasoby : 0),
+        compScore:  s.compScore != null ? s.compScore : (s.kompetencje != null ? s.kompetencje : 0),
+        cashScore:  s.cashScore != null ? s.cashScore : (s.gotowka != null ? s.gotowka : 0),
+        plotScore:  s.plotScore != null ? s.plotScore : (s.dzialka != null ? s.dzialka : 0),
+        mapScore:   s.mapScore  != null ? s.mapScore  : (s.mapa != null ? s.mapa : 0),
+        bnb:        s.bnb || 0,
+        bizTotal:   s.bizTotal  != null ? s.bizTotal  : (s.total != null ? s.total - (s.relacje||0) : 0),
+        resPct:     s.resPct    != null ? s.resPct    : 0,
+        compPct:    s.compPct   != null ? s.compPct   : 0,
+        plotOk:     s.plotOk    != null ? s.plotOk    : (s.dzialka > 0),
+        bnbObligacje: s.bnbObligacje || 0,
+        bnbKwatera:   s.bnbKwatera || 0,
+        bnbKurier:    s.bnbKurier || 0,
+        bnbMikstura:  s.bnbMikstura || 0,
+      };
+    });
+    scores = _ns;
+  }
   var lines = [];
   lines.push("═══════════════════════════════════════════════════════════");
   lines.push("  WDZ MONITOR – RAPORT DIAGNOSTYCZNY");
@@ -600,6 +625,58 @@ function generateReport(roomCode, gameState, players, scores, txStats, phaseStat
         lines.push("  " + aLabel + " – " + bLabel + ": " + data.total + " tx (✓" + data.accepted + " ✗" + data.rejected + " ⊘" + data.cancelled + ")");
       });
     }
+  }
+  lines.push("");
+
+  // RYTM TRANSAKCJI PER TURA
+  lines.push("── RYTM TRANSAKCJI PER TURA ──");
+  var turnLabels = ["F1T1","F1T2","F1T3","F2T1","F2T2","F2T3","F3T1","F3T2","F3T3"];
+  var txPerTurn = null;
+  var _txsAll = gameState && gameState.txs ? ensureArray(gameState.txs) : [];
+  var tradeTxForRhythm = _txsAll.filter(t => t && t.status === "accepted" && (t.type === "sale" || t.type === "barter") && t.phase !== undefined && t.phase !== null);
+  if(tradeTxForRhythm.length > 0 && fd) {
+    txPerTurn = {};
+    FO.forEach(fId => { txPerTurn[fId] = [0,0,0,0,0,0,0,0,0]; });
+    tradeTxForRhythm.forEach(tx => {
+      var p = tx.phase;
+      if(p >= 0 && p <= 8) {
+        if(tx.from && txPerTurn[tx.from]) txPerTurn[tx.from][p]++;
+        if(tx.to && txPerTurn[tx.to]) txPerTurn[tx.to][p]++;
+      }
+    });
+  }
+  if(txPerTurn) {
+    lines.push("                 " + turnLabels.join("  "));
+    FO.forEach(fId => {
+      var name = (FM[fId].nom + "               ").slice(0, 16);
+      lines.push(name + " " + txPerTurn[fId].map(n => String(n).padStart(4)).join("  "));
+    });
+  } else {
+    lines.push("Brak danych (transakcje bez przypisanej tury).");
+  }
+  lines.push("");
+
+  // REALIZACJA ZADAŃ
+  lines.push("── REALIZACJA ZADAŃ ──");
+  if(fd) {
+    FO.forEach(fId => {
+      var f = FM[fId];
+      var items = fd[fId] ? ensureArray(fd[fId].items) : [];
+      var task = G_TASKS[fId];
+      var resItems = items.filter(i => i.cat === C_RES && i.forBiz === f.biz);
+      var resPct = resItems.reduce((s, i) => s + (i.weight || 0), 0);
+      var compItems = items.filter(i => i.cat === C_COMP && i.forBiz === f.biz);
+      var compPct = compItems.reduce((s, i) => s + (i.weight || 0), 0);
+      var plots = items.filter(i => i.cat === C_PLOT);
+      var hasCorrect = plots.some(i => i.plotNr === f.tPlot);
+      var plotLabel = hasCorrect ? "docelowa (nr " + f.tPlot + ")" : plots.length > 0 ? "startowa (nr " + plots[0].plotNr + ")" : "brak";
+      lines.push(f.nom + ":");
+      lines.push("  Zasoby:       " + resItems.length + "/" + task.zasoby.length + " kart (" + resPct + "% wagi)");
+      lines.push("  Kompetencje:  " + compItems.length + "/" + task.kompetencje.length + " kart (" + compPct + "% wagi)");
+      lines.push("  Działka:      " + plotLabel);
+    });
+  } else {
+    lines.push("Brak danych fd.");
   }
   lines.push("");
 

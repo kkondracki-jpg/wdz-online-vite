@@ -372,17 +372,29 @@ function RoomsView({onOpenReport}) {
 
   return (
     <div>
-      {/* Nagłówek z licznikiem i przyciskiem czyszczenia */}
-      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16}}>
+      {/* Nagłówek z licznikiem i przyciskami czyszczenia */}
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16, flexWrap:"wrap", gap:8}}>
         <div style={{fontSize:13, color:C.textMut}}>Łącznie: {rooms.length} rozgrywek</div>
-        {confirmClear
-          ? <div style={{display:"flex", gap:8, alignItems:"center"}}>
-              <span style={{fontSize:13, color:C.textMut}}>Na pewno usunąć wszystkie?</span>
-              <Btn small variant="danger" onClick={deleteAllRooms}>Tak, usuń wszystkie</Btn>
-              <Btn small variant="ghost" onClick={()=>setConfirmClear(false)}>Anuluj</Btn>
-            </div>
-          : <Btn small variant="danger" onClick={()=>setConfirmClear(true)}>Usuń wszystkie rozgrywki</Btn>
-        }
+        <div style={{display:"flex", gap:8, alignItems:"center", flexWrap:"wrap"}}>
+          {/* Cleanup starszych niż X dni */}
+          {[7,30,90].map(days => {
+            var cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+            var old = rooms.filter(r => r.created && r.created < cutoff && r.status !== "playing");
+            if(old.length === 0) return null;
+            return <Btn key={days} small variant="ghost" onClick={()=>{
+              if(!window.confirm("Usunąć " + old.length + " rozgrywek starszych niż " + days + " dni?\n\n(Rozgrywki w statusie \u201Eplaying\u201D nie zostaną usunięte)")) return;
+              old.forEach(r => db.ref("rooms/" + r.code).remove());
+            }}>Starsze niż {days}d ({old.length})</Btn>;
+          })}
+          {confirmClear
+            ? <div style={{display:"flex", gap:8, alignItems:"center"}}>
+                <span style={{fontSize:13, color:C.textMut}}>Na pewno usunąć wszystkie?</span>
+                <Btn small variant="danger" onClick={deleteAllRooms}>Tak, usuń wszystkie</Btn>
+                <Btn small variant="ghost" onClick={()=>setConfirmClear(false)}>Anuluj</Btn>
+              </div>
+            : <Btn small variant="danger" onClick={()=>setConfirmClear(true)}>Usuń wszystkie</Btn>
+          }
+        </div>
       </div>
 
       <div style={{display:"flex", flexDirection:"column", gap:8}}>
@@ -2175,6 +2187,31 @@ function fragName(nr) { return nr===1?"Adamsów":nr===2?"Bennetów":nr===3?"Clin
 function generateReport(roomCode, gameState, players, scores, txStats, phaseStats, eventLog, cashSnapshots, connHistory, elapsed, consultNotes, precomputed) {
   var fd = gameState ? gameState.fd : null;
   var relData = gameState ? gameState.relations || {} : {};
+
+  // Normalizacja formatu scores – gCalcScores (zasoby/kompetencje) vs calcScore (resScore/compScore)
+  if(scores) {
+    var _ns = {};
+    FO.forEach(function(fId) {
+      var s = scores[fId]; if(!s) return;
+      _ns[fId] = {
+        resScore:   s.resScore  != null ? s.resScore  : (s.zasoby != null ? s.zasoby : 0),
+        compScore:  s.compScore != null ? s.compScore : (s.kompetencje != null ? s.kompetencje : 0),
+        cashScore:  s.cashScore != null ? s.cashScore : (s.gotowka != null ? s.gotowka : 0),
+        plotScore:  s.plotScore != null ? s.plotScore : (s.dzialka != null ? s.dzialka : 0),
+        mapScore:   s.mapScore  != null ? s.mapScore  : (s.mapa != null ? s.mapa : 0),
+        bnb:        s.bnb || 0,
+        bizTotal:   s.bizTotal  != null ? s.bizTotal  : (s.total != null ? s.total - (s.relacje||0) : 0),
+        resPct:     s.resPct    != null ? s.resPct    : 0,
+        compPct:    s.compPct   != null ? s.compPct   : 0,
+        plotOk:     s.plotOk    != null ? s.plotOk    : (s.dzialka > 0),
+        bnbObligacje: s.bnbObligacje || 0,
+        bnbKwatera:   s.bnbKwatera || 0,
+        bnbKurier:    s.bnbKurier || 0,
+        bnbMikstura:  s.bnbMikstura || 0,
+      };
+    });
+    scores = _ns;
+  }
   var lines = [];
   lines.push("═══════════════════════════════════════════════════════════");
   lines.push("  WDZ MONITOR – RAPORT DIAGNOSTYCZNY");
@@ -2337,7 +2374,8 @@ function generateReport(roomCode, gameState, players, scores, txStats, phaseStat
   if(precomputed && precomputed.txPerTurn) {
     txPerTurn = precomputed.txPerTurn;
   } else {
-    var tradeTxForRhythm = txs.filter(t => t && t.status === "accepted" && (t.type === "sale" || t.type === "barter") && t.phase !== undefined && t.phase !== null);
+    var _txsAll = gameState && gameState.txs ? ensureArray(gameState.txs) : [];
+    var tradeTxForRhythm = _txsAll.filter(t => t && t.status === "accepted" && (t.type === "sale" || t.type === "barter") && t.phase !== undefined && t.phase !== null);
     if(tradeTxForRhythm.length > 0 && fd) {
       txPerTurn = {};
       FO.forEach(fId => { txPerTurn[fId] = [0,0,0,0,0,0,0,0,0]; });
@@ -3050,10 +3088,38 @@ function MonitorView({roomCode: propCode, onClose}) {
             {soundEnabled ? "🔔" : "🔇"}
           </button>
           <button style={{...S.btnSmall}} onClick={() => {
-            db.ref("rooms/"+roomCode+"/sheriffPrivate/consultNotes").once("value").then(snap => {
-              var cn = snap.val() || {};
+            Promise.all([
+              db.ref("rooms/"+roomCode+"/sheriffPrivate").once("value"),
+              db.ref("rooms/"+roomCode+"/sessionInfo").once("value"),
+              db.ref("rooms/"+roomCode+"/meta").once("value"),
+            ]).then(([spSnap, siSnap, metaSnap]) => {
+              var sp = spSnap.val() || {};
+              var si = siSnap.val() || {};
+              var mt = metaSnap.val() || {};
               try {
-                var report = generateReport(roomCode, gameState, players, scores, txStats, phaseStats, eventLog, cashSnapshots, connHistory, elapsed, cn);
+                var raw = {
+                  fd: gameState.fd,
+                  txs: ensureArray(gameState.txs || []),
+                  blindFate: gameState.blindFate || {},
+                  relations: gameState.relations || {},
+                  bnbEnabled: gameState.bnbEnabled || false,
+                  mapEnabled: gameState.mapEnabled !== false,
+                  fateEnabled: gameState.fateEnabled || false,
+                  revEnabled: gameState.revEnabled || false,
+                  relationsUnlocked: gameState.relationsUnlocked || false,
+                  revDuels: ensureArray(gameState.revDuels || []),
+                  plotPenalties: gameState.plotPenalties || {},
+                  biznesNaBoku: sp.biznesNaBoku || {},
+                  mapBonusClaimed: gameState.mapBonusClaimed || {},
+                  sheriffCalls: ensureArray(gameState.sheriffCalls || []),
+                  consultNotes: sp.consultNotes || {},
+                  debriefNotes: sp.debriefNotes || {},
+                  meta: mt,
+                  sessionInfo: si,
+                };
+                var rd = buildReportData(raw);
+                var report = generateReport(roomCode, gameState, players, scores, txStats, phaseStats, eventLog, cashSnapshots, connHistory, elapsed, sp.consultNotes || {},
+                  {txPerTurn: rd.txPerTurn, turnLabels: rd.turnLabels, tasks: rd.tasks});
                 if(!report || report.trim().length === 0) { alert("Raport jest pusty – brak danych do eksportu."); return; }
                 downloadReport(report, roomCode, "diagnostyczny");
               } catch(e) { alert("Błąd generowania raportu: " + e.message); console.error("generateReport error:", e); }
@@ -3646,24 +3712,26 @@ function MonitorTab() {
     return <MonitorView roomCode={selectedRoom} onClose={() => setSelectedRoom(null)} />;
   }
 
-  var playing = rooms.filter(r => r.status === "playing");
+  var active = rooms.filter(r => r.status === "playing" || r.status === "lobby");
 
   // Auto-connect: jeśli dokładnie 1 aktywna rozgrywka, podłącz automatycznie
-  if(!loading && playing.length === 1 && !selectedRoom) {
-    setTimeout(() => setSelectedRoom(playing[0].code), 0);
-    return <div style={{textAlign:"center", padding:40, color:C.gold}}>Podłączanie do {playing[0].code}…</div>;
+  if(!loading && active.length === 1 && !selectedRoom) {
+    setTimeout(() => setSelectedRoom(active[0].code), 0);
+    return <div style={{textAlign:"center", padding:40, color:C.gold}}>Podłączanie do {active[0].code}…</div>;
   }
 
   // Wiele aktywnych – pozwól wybrać (rzadki przypadek)
-  if(!loading && playing.length > 1) {
+  if(!loading && active.length > 1) {
     return (
       <div>
         <div style={{textAlign:"center", color:C.textMut, padding:40, fontSize:15}}>
-          Wykryto {playing.length} aktywne rozgrywki. Wybierz jedną:
+          Wykryto {active.length} aktywnych rozgrywek. Wybierz jedną:
         </div>
         <div style={{display:"flex", flexDirection:"column", gap:8, maxWidth:400, margin:"0 auto"}}>
-          {playing.map(r => (
-            <Btn key={r.code} onClick={() => setSelectedRoom(r.code)}>{r.code}</Btn>
+          {active.map(r => (
+            <Btn key={r.code} onClick={() => setSelectedRoom(r.code)}>
+              {r.code} <span style={{fontSize:12,color:C.textMut,marginLeft:6}}>{r.status === "playing" ? "▶ w trakcie" : "⏳ lobby"}</span>
+            </Btn>
           ))}
         </div>
       </div>
