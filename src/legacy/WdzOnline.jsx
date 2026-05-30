@@ -2,22 +2,21 @@
 import { FM, FO, PAIRINGS, STAGES, PHASE_NAMES, AGENDA_ITEMS, C_RES, C_COMP, C_NRES, C_NCOMP, C_PLOT, C_MAP, C_BNB, BNB_PRODUCTS, BLIND_FATE_EVENTS, getMeetingPartner } from "../game/constants.js";
 import { jsPDF } from "jspdf";
 import "jspdf-autotable";
-import { ci, txId, R, RB, K, KB, NR, NK, PL, MP, makeBnbCards, START } from "../game/cards.js";
+import { ci, txId, makeBnbCards, START } from "../game/cards.js";
 import { buildView, calcScore, fmtItems, calcRelationScore } from "../game/scoring.js";
-import { IMG_BASE, toSlug, imgUrl, mapImgUrl, REV_IMG_MAP, getRevImg, ensureArray, fixFdFromFirebase, revDuelToFB, revDuelFromFB, revActiveToFB, revActiveFromFB } from "../utils/index.js";
+import { IMG_BASE, fixFdFromFirebase, revDuelToFB, revDuelFromFB, revActiveToFB, revActiveFromFB } from "../utils/index.js";
 import { ConnectionIndicator, StarRating, btnS, InfoPopup, TaskHeader } from "../components/ui.jsx";
 import { ResourceCard, CompCard, NoteCard } from "../components/cards.jsx";
 import { PlotDisplay } from "../components/PlotDisplay.jsx";
 import { BnbTab } from "../components/BnbTab.jsx";
 import { TxDisplay } from "../components/TxDisplay.jsx";
-import { MapFragImg, MapTracker } from "../components/MapTracker.jsx";
-import { DiceSVG, DiceImg } from "../components/dice.jsx";
-import { FateEventCard, BlindFateFamily } from "../components/BlindFate.jsx";
+import { MapTracker } from "../components/MapTracker.jsx";
+import { BlindFateFamily } from "../components/BlindFate.jsx";
 import { RewolwerowiecNew } from "../components/Revolver.jsx";
 import { InstructionSlides } from "../components/InstructionSlides.jsx";
 import { DebriefingPanel } from "../components/DebriefingPanel.jsx";
 import { SheriffPlanningTab, SheriffPanel } from "../components/SheriffPanel.jsx";
-import { IS_LOCAL, db, auth, fbApp, generateRoomCode, getOrCreatePlayerId, getUrlParams, buildFamilyLink, firebase } from "../firebase/config.js";
+import { db, auth, generateRoomCode, getOrCreatePlayerId, getUrlParams, firebase } from "../firebase/config.js";
 import { useConnectionStatus, useServerTimeOffset, usePlayerHeartbeat } from "../hooks/index.js";
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
@@ -176,7 +175,7 @@ function Lobby({onJoin}){
   function handleCreate(){
     if(!db){setError("Brak połączenia z Firebase. Otwórz grę z GitHub Pages.");return;}
     setLoading(true);setError(null);
-    // P2-5 – atomowe tworzenie rozgrywki: transaction zamiast once+set (eliminuje TOCTOU)
+    // atomowe tworzenie rozgrywki: transaction zamiast once+set (eliminuje TOCTOU)
     function tryCreate(attempt){
       if(attempt>5){setError("Nie udało się wygenerować unikalnego kodu. Spróbuj ponownie.");setLoading(false);return;}
       var code=generateRoomCode();
@@ -214,7 +213,7 @@ function Lobby({onJoin}){
   function submitName(){
     var name=playerName.trim();
     if(!name){setError("Wpisz swoje imię lub pseudonim");return;}
-    // P3-6 – normalizacja nazwy: jedno źródło prawdy dla wszystkich useEffectów presence/auto-join
+    // normalizacja nazwy: jedno źródło prawdy dla wszystkich useEffectów presence/auto-join
     setPlayerName(name);
     setError(null);setNameSubmitted(true);
     db.ref("rooms/"+roomCode+"/meta/status").once("value").then(snap=>{
@@ -531,7 +530,7 @@ function playGunshots(count,interval){
 async function generateTrainerPDF(data) {
   // jsPDF imported at module level
   var doc = new jsPDF({orientation: "portrait", unit: "mm", format: "a4"});
-  var ML = 20, MR = 20, MT = 20, PW = 210 - 40, PAGE_H = 297, FOOTER_Y = 282, Y = MT;
+  var ML = 20, MR = 20, MT = 20, PW = 210 - 40, FOOTER_Y = 282, Y = MT;
   var COL = {
     primary:[132,37,4], dark:[76,19,15], gold:[212,168,83], text:[44,24,16],
     textDim:[107,90,74], white:[255,255,255], bg:[245,240,232], line:[212,196,168],
@@ -641,7 +640,7 @@ async function generateTrainerPDF(data) {
   if(data.revEnabled&&revDuels.length>0){
     hd("Rewolwerowiec");
     var rvH=[["Nr","Wyzywający","Przeciwnik","Stawka","Zwycięzca"]];
-    var rvR=revDuels.filter(function(d){return d;}).map(function(d,i){return[i+1,(FM[d.challenger]||{}).nom||"?",(FM[d.opponent]||{}).nom||"?",(d.bet||0)+" $",(FM[d.winner]||{}).nom||"?"];});
+    var rvR=revDuels.filter(function(d){return d;}).map(function(d,i){return[i+1,(FM[d.familyA]||{}).nom||"?",(FM[d.familyB]||{}).nom||"?",(d.bet||0)+" $",(FM[d.winner]||{}).nom||"?"];});
     doc.autoTable({startY:Y,head:rvH,body:rvR,margin:{left:ML,right:MR},styles:{font:FONT,fontSize:9,cellPadding:2,halign:"center"},headStyles:{fillColor:COL.dark,textColor:COL.white,fontStyle:"bold"},alternateRowStyles:{fillColor:[250,245,238]}});
     Y=doc.lastAutoTable.finalY+8;
   }
@@ -674,8 +673,18 @@ function App({roomCode,role,playerId,playerName}) {
   const serverTimeOffset=useServerTimeOffset();
   // Heartbeat for family players
   usePlayerHeartbeat(roomCode,myFamily,playerId);
-  // T5 – unikalny ID sesji (dla blokady formularza TX)
+  // unikalny ID sesji (dla blokady formularza TX)
   const sessionId=useRef(Date.now().toString(36)+Math.random().toString(36).slice(2,6));
+  // czyść stale locki po odświeżeniu strony (nowy sessionId nie pasuje do starych wpisów)
+  // Tylko dla graczy-rodzin (Szeryf nie handluje, nie powinien czyścić cudzych locków)
+  useEffect(()=>{
+    if(!db||!roomCode||!myFamily)return;
+    // Wyczyść txLock dla tej rodziny
+    db.ref("rooms/"+roomCode+"/txLock/"+myFamily).remove();
+    // Wyczyść txMeetLock dla każdej pary zawierającej tę rodzinę
+    var others=FO.filter(f=>f!==myFamily);
+    others.forEach(function(o){var pair=[myFamily,o].sort();db.ref("rooms/"+roomCode+"/txMeetLock/"+pair[0]+"_"+pair[1]).remove();});
+  },[]);
   const [cf,setCf]=useState(isSheriffAny?"adams":(myFamily||"adams"));
   const [viewSheriff,setViewSheriff]=useState(isSheriffAny);
   const [sheriffViewFamily,setSheriffViewFamily]=useState(null);
@@ -756,8 +765,7 @@ function App({roomCode,role,playerId,playerName}) {
     var remaining=Math.max(0,Math.round(duel.timerDuration-elapsed));
     return remaining;
   }
-  // backward compat: revTimer = timer for first active duel
-  const revTimer=revCurrent?getRevTimer(revCurrent.id):-1;
+
   // revCurrent shape: {id, familyA, familyB, bet:0, bulletPos:0, ammoA:50, ammoB:50, rounds:[], shotsA:null, shotsB:null, status:'betting'|'playing'|'reveal'|'finished', winner:null, winField:null, timerPhase:null|'declaration'|'reveal', timerStartedAt:0, timerDuration:0}
   function revNewDuel(fA,fB){setRevCurrent({id:ci(),familyA:fA,familyB:fB,bet:0,bulletPos:0,ammoA:50,ammoB:50,rounds:[],shotsA:null,shotsB:null,status:"betting",winner:null,winField:null,timerPhase:null,timerStartedAt:0,timerDuration:0});}
   function revSetBet(amt){
@@ -771,6 +779,20 @@ function App({roomCode,role,playerId,playerName}) {
       if(fId===d.familyB)return{...d,shotsB:n};
       return d;
     }));
+    // direct write do Firebase (bez tego strzały gracza nie docierają do Szeryfa)
+    if(db&&roomCode){
+      db.ref("rooms/"+roomCode+"/gameState/revActive").transaction(function(cur){
+        if(!cur)return cur;
+        var arr=Array.isArray(cur)?cur:(typeof cur==="object"?Object.values(cur):null);
+        if(!arr)return cur;
+        return arr.map(function(d){
+          if(!d)return d;
+          if(fId===d.familyA)return Object.assign({},d,{shotsA:n});
+          if(fId===d.familyB)return Object.assign({},d,{shotsB:n});
+          return d;
+        });
+      });
+    }
   }
   // Helper: update a specific duel in revActive by id
   function revUpdateDuel(duelId,fn){
@@ -850,8 +872,11 @@ function App({roomCode,role,playerId,playerName}) {
     var payFrac=c.winField==="wygrana"?1:c.winField==="dominacja"?2/3:c.winField==="przewaga"?1/3:0;
     var winAmt=Math.round(c.bet*payFrac);
     if(c.winner&&winAmt>0){var loser=c.winner===c.familyA?c.familyB:c.familyA;
-      setFd(fd2=>{var n={...fd2};var actualWin=Math.min(winAmt,n[loser].cash);n[c.winner]={...n[c.winner],cash:n[c.winner].cash+actualWin};n[loser]={...n[loser],cash:n[loser].cash-actualWin};return n;});
-      setTxs(p=>[...p,{id:ci(),type:"revolver",from:loser,to:c.winner,amount:winAmt,field:c.winField,status:"accepted",ts:Date.now()}]);
+      // oblicz actualWin synchronicznie z bieżącego snapshotu (zamiast ref mutation w updaterze)
+      var curFd=stateRef.current.fd;
+      var actualWin=Math.min(winAmt,curFd[loser].cash);
+      setFd(fd2=>{var n={...fd2};var aw=Math.min(winAmt,n[loser].cash);n[c.winner]={...n[c.winner],cash:n[c.winner].cash+aw};n[loser]={...n[loser],cash:n[loser].cash-aw};return n;});
+      setTxs(p=>[...p,{id:ci(),type:"revolver",from:loser,to:c.winner,amount:actualWin,field:c.winField,status:"accepted",ts:Date.now()}]);
     }
     setRevDuels(d=>[...d,{...c,settled:true}]);
     setRevActive(prev=>prev.filter(d=>d.id!==duelId));
@@ -877,7 +902,7 @@ function App({roomCode,role,playerId,playerName}) {
   const [timerPaused,setTimerPaused]=useState(false);
   const [gunshotFired,setGunshotFired]=useState(false);
   const timerRef=useRef(null);
-  // S3 – serwer-based timer: przechowywane w Firebase, secondsLeft wyliczane lokalnie
+  // serwer-based timer: przechowywane w Firebase, secondsLeft wyliczane lokalnie
   const [timerStartedAt,setTimerStartedAt]=useState(0);      // ms – kiedy bieżący okres startował
   const [timerDuration,setTimerDuration]=useState(0);        // sekundy – całkowity czas etapu
   const [timerPausedSecondsLeft,setTimerPausedSecondsLeft]=useState(null); // sekundy przy pauzie (null = nie zapauzowany)
@@ -900,17 +925,31 @@ function App({roomCode,role,playerId,playerName}) {
     document.body.style.backgroundImage="url('img/background_5.png')";
   },[]);
 
-  // REL2 – gdy relacje zostaną zablokowane, przełącz aktywną zakładkę
+  // gdy relacje zostaną zablokowane, przełącz aktywną zakładkę
   useEffect(()=>{
     var fallback=(devMode||tutorialDone[familyId])?"inv":"tutorial";
     if(!relationsUnlocked && activeTab==="rel") setActiveTab(fallback);
   },[relationsUnlocked]);
 
-  // BnB – gdy BnB zostanie wyłączony, przełącz aktywną zakładkę
+  // gdy BnB zostanie wyłączony, przełącz aktywną zakładkę
   useEffect(()=>{
     var fallback=(devMode||tutorialDone[familyId])?"inv":"tutorial";
     if(!bnbEnabled && activeTab==="bnb") setActiveTab(fallback);
   },[bnbEnabled]);
+
+  // gdy moduł zostanie wyłączony, przełącz aktywną zakładkę
+  useEffect(()=>{
+    var fallback=(devMode||tutorialDone[familyId])?"inv":"tutorial";
+    if(!mapEnabled && activeTab==="map") setActiveTab(fallback);
+  },[mapEnabled]);
+  useEffect(()=>{
+    var fallback=(devMode||tutorialDone[familyId])?"inv":"tutorial";
+    if(!fateEnabled && activeTab==="fate") setActiveTab(fallback);
+  },[fateEnabled]);
+  useEffect(()=>{
+    var fallback=(devMode||tutorialDone[familyId])?"inv":"tutorial";
+    if(!revEnabled && activeTab==="rev") setActiveTab(fallback);
+  },[revEnabled]);
 
   // Tryb produkcyjny: po ukończeniu tutoriala (ekran 9) jednorazowe auto-przejście na Majątek
   const tutorialRedirectedRef=useRef({});
@@ -921,16 +960,16 @@ function App({roomCode,role,playerId,playerName}) {
     }
   },[tutorialDone,familyId]);
 
-  // T1 – synchronizuj formOpen z showP (formularz transakcji otwarty)
+  // synchronizuj formOpen z showP (formularz transakcji otwarty)
   useEffect(()=>{
     formOpen.current=showP;
     if(!showP)formOpen.current=false;
   },[showP]);
 
-  // T2/T3 – synchronizuj formStateRef z tFam i pStep
+  // synchronizuj formStateRef z tFam i pStep
   useEffect(()=>{formStateRef.current={tFam,pStep};},[tFam,pStep]);
 
-  // S5 – cleanup dice timeoutów przy odmontowaniu komponentu
+  // cleanup dice timeoutów przy odmontowaniu komponentu
   useEffect(()=>{return()=>{diceTimeouts.current.forEach(t=>clearTimeout(t));};},[]);
 
   // Keep stateRef current (Firebase doesn't store null, use false as marker)
@@ -944,7 +983,7 @@ function App({roomCode,role,playerId,playerName}) {
       sheriffCalls:sheriffCalls.length?sheriffCalls:[]};
   });
 
-  // S1 – śledzenie poprzedniego stanu do diff
+  // śledzenie poprzedniego stanu do diff
   const prevSyncRef=useRef({});
 
   function syncToFB(immediate){
@@ -976,17 +1015,19 @@ function App({roomCode,role,playerId,playerName}) {
         if(JSON.stringify(cur[k])!==JSON.stringify(prev[k]))privDiff[k]=cur[k]!==undefined?cur[k]:null;
       });
       var updates=[];
-      if(Object.keys(pubDiff).length>0&&isSheriffAny){
+      if(Object.keys(pubDiff).length>0&&isSheriff){
         updates.push(db.ref("rooms/"+roomCode+"/gameState").update(pubDiff));
       }
-      // Gracz: sync TYLKO txs i tutorialDone (reszta zastrzeżona dla Szeryfa)
+      // Gracz: sync tutorialDone + mapLayout własnej rodziny (txs przez direct writes)
       if(!isSheriffAny){
         var playerDiff={};
-        if(pubDiff.txs!==undefined) playerDiff.txs=pubDiff.txs;
         if(pubDiff.tutorialDone!==undefined) playerDiff.tutorialDone=pubDiff.tutorialDone;
+        // mapLayout per-family (gracz zapisuje tylko swoją rodzinę)
+        var mlKey="mapLayout/"+(myFamily||cf);
+        if(pubDiff[mlKey]!==undefined) playerDiff[mlKey]=pubDiff[mlKey];
         if(Object.keys(playerDiff).length>0) updates.push(db.ref("rooms/"+roomCode+"/gameState").update(playerDiff));
       }
-      if(Object.keys(privDiff).length>0&&isSheriffAny&&auth&&auth.currentUser){
+      if(Object.keys(privDiff).length>0&&isSheriff&&auth&&auth.currentUser){
         updates.push(db.ref("rooms/"+roomCode+"/sheriffPrivate").update(privDiff));
       }
       if(updates.length>0){
@@ -1020,7 +1061,6 @@ function App({roomCode,role,playerId,playerName}) {
         fbInitDone.current=true;
         if(status==="playing"||status==="finished"){
           // Room already in progress or finished – don't overwrite, let listener load data
-          console.log("[WDZ] Room status: "+status+" – skipping init sync, waiting for Firebase data");
         } else {
           // New room (lobby) – initialize game state in Firebase
           setTimeout(()=>syncToFB(true),200);
@@ -1039,7 +1079,7 @@ function App({roomCode,role,playerId,playerName}) {
       if(!s)return;
       fbIncoming.current=true;
       if(s.fd)setFd(fixFdFromFirebase(s.fd));
-      // P0-1 – merge listy transakcji po id
+      // merge listy transakcji po id
       if(s.txs){
         var remoteTxs=Array.isArray(s.txs)?s.txs:Object.values(s.txs);
         setTxs(function(local){
@@ -1116,7 +1156,7 @@ function App({roomCode,role,playerId,playerName}) {
       if(s.stageDurations)setStageDurations(s.stageDurations);
       if(s.timerRunning!==undefined)setTimerRunning(s.timerRunning);
       if(s.timerPaused!==undefined)setTimerPaused(s.timerPaused);
-      // S3 – timer oparty na serwerze
+      // timer oparty na serwerze
       if(s.timerStartedAt!==undefined)setTimerStartedAt(s.timerStartedAt);
       if(s.timerDuration!==undefined)setTimerDuration(s.timerDuration);
       if(s.timerPausedSecondsLeft!==undefined)setTimerPausedSecondsLeft(s.timerPausedSecondsLeft);
@@ -1163,14 +1203,14 @@ function App({roomCode,role,playerId,playerName}) {
 
   const showMsg=useCallback(m=>{setToast(m);setTimeout(()=>setToast(null),3000);},[]);
 
-  // === CARD LOCK (Nr 5) – check if card is in pending transaction ===
+  // Sprawdź czy karta jest w oczekującej transakcji (blokada handlu)
   function isCardLocked(cardId){
     return txs.some(t=>(t.status==="pending"||t.status==="awaiting_response")&&
       ((t.offeredItems&&t.offeredItems.some(i=>i.id===cardId))||
        (t.responseItems&&t.responseItems.some(i=>i.id===cardId))));
   }
 
-  // === BROWSER DETECTION (Nr 7) ===
+  // Wykrywanie przeglądarki (preferowany Chrome)
   const [browserWarning,setBrowserWarning]=useState(()=>{
     var ua=navigator.userAgent;
     var isChrome=/Chrome/.test(ua)&&!/Edg|OPR/.test(ua);
@@ -1218,7 +1258,7 @@ function App({roomCode,role,playerId,playerName}) {
   var familyData=fd[familyId];
   var familyView=useMemo(()=>buildView(familyData.items,FM[familyId].biz),[familyData.items,familyId]);
   var my=fd[cf];
-  var familyTxs=txs.filter(t=>(t.from===familyId||t.to===familyId));
+  var familyTxs=txs.filter(t=>(t.from===familyId||t.to===familyId)&&t.status!=="undone");
   var pendingCount=txs.filter(t=>(t.type==="sale"&&t.status==="pending"&&t.to===cf)||(t.type==="barter"&&t.status==="awaiting_response"&&t.to===cf)||(t.type==="barter"&&t.status==="pending"&&t.from===cf)).length;
   var myConsults=consultations[cf]||[];
   var myQLeft=myConsults.reduce((s,c)=>s+(c.questionsTotal-c.questionsUsed),0);
@@ -1287,9 +1327,10 @@ function App({roomCode,role,playerId,playerName}) {
   },[fd]);
 
   // claimMapBonus – wywoływana ręcznie przez gracza (przycisk Zatwierdź)
-  // P1-3: pełna atomowość – flaga + cash 4 rodzin + wpis tx w jednej transakcji Firebase.
-  //       Eliminuje przypadek "flaga ustawiona, ale brak skutków finansowych" przy zamknięciu karty po committed.
-  //       Tx ma deterministyczne id "mb-"+fId – chroni przed duplikatami przy ewentualnym recovery.
+  // Dwuetapowa: (1) transaction na mapBonusClaimed (kto pierwszy), (2) transaction na fd (cash).
+  // Nie jest w pełni atomowa – przerwanie klienta między (1) a (2) może zostawić flagę bez skutków finansowych.
+  // Ryzyko w praktyce zerowe, pełna atomowość wymagałaby Cloud Functions.
+  // Tx ma deterministyczne id "mb-"+fId – chroni przed duplikatami przy ewentualnym recovery.
   function claimMapBonus(fId){
     if(!mapEnabled) return;
     if(mapBonusClaimed[fId]) return;
@@ -1338,10 +1379,12 @@ function App({roomCode,role,playerId,playerName}) {
             fbIncoming.current=true;
             if(newFd)setFd(newFd);
             var mbTxId="mb-"+fId;
+            var mbTxEntry={id:mbTxId,type:"map_bonus",from:fId,to:"all",status:"accepted",offeredItems:[]};
             setTxs(function(p){
               if(p.some(function(t){return t&&t.id===mbTxId;}))return p;
-              return [{id:mbTxId,type:"map_bonus",from:fId,to:"all",status:"accepted",offeredItems:[]}].concat(p);
+              return [mbTxEntry].concat(p);
             });
+            fbPrependTx(mbTxEntry);
             setMapBonusClaimed(function(p){return Object.assign({},p,{[fId]:true});});
             prevSyncRef.current=Object.assign({},prevSyncRef.current,{fd:newFd,mapBonusClaimed:Object.assign({},prevSyncRef.current.mapBonusClaimed||{},{[fId]:true})});
             setTimeout(function(){fbIncoming.current=false;},50);
@@ -1381,7 +1424,7 @@ function App({roomCode,role,playerId,playerName}) {
     showMsg(FM[fId].nom+" ułożyli Złotodajną Żyłę! Premia 300 $!");
   }
 
-  // === TIMER EFFECT – S3: secondsLeft wyliczane z timerStartedAt + serverTimeOffset ===
+  // === TIMER EFFECT: secondsLeft wyliczane z timerStartedAt + serverTimeOffset ===
   useEffect(()=>{
     if(timerRunning&&!timerPaused){
       // Natychmiast przelicz przy zmianie stanu (np. po reconnect)
@@ -1394,7 +1437,7 @@ function App({roomCode,role,playerId,playerName}) {
       }
       timerRef.current=setInterval(()=>{
         setSecondsLeft(prev=>{
-          // S3 – wylicz aktualną wartość z timerStartedAt + serverTimeOffset
+          // wylicz aktualną wartość z timerStartedAt + serverTimeOffset
           var now=Date.now()+serverTimeOffset;
           var sLeft=timerStartedAt>0?Math.max(0,Math.round(timerDuration-(now-timerStartedAt)/1000)):Math.max(0,prev-1);
           if(sLeft<=0){clearInterval(timerRef.current);setTimerRunning(false);
@@ -1423,14 +1466,18 @@ function App({roomCode,role,playerId,playerName}) {
       setMapBonusClaimed({});setMapLayout({adams:[0,0,0,0],bennet:[0,0,0,0],clinton:[0,0,0,0],dexter:[0,0,0,0]});
       setSheriffCalls([]);
       setTutorialDone({});tutorialRedirectedRef.current={};
-      if(db&&roomCode)db.ref("rooms/"+roomCode+"/instructionCompleted").remove();
+      if(db&&roomCode){
+        db.ref("rooms/"+roomCode+"/instructionCompleted").remove();
+        db.ref("rooms/"+roomCode+"/txMeetLock").remove();
+        db.ref("rooms/"+roomCode+"/txLock").remove();
+      }
       if(bnbEnabled)setBnbSettled(false);
     }
     // Auto-cancel pending txs z poprzedniego etapu
     setTxs(prev=>{var changed=false;var n=prev.map(t=>{if(t.status==="pending"||t.status==="awaiting_response"){changed=true;return{...t,status:"cancelled",cancelReason:"Koniec tury"};}return t;});return changed?n:prev;});
     setStageIdx(idx);setGameStarted(true);
     var dur=stageDurations[STAGES[idx].id]*60;
-    var now=Date.now()+serverTimeOffset; // S3: czas serwerowy
+    var now=Date.now()+serverTimeOffset;
     setTimerDuration(dur);
     setTimerStartedAt(now);
     setTimerPausedSecondsLeft(null);
@@ -1440,7 +1487,7 @@ function App({roomCode,role,playerId,playerName}) {
     showMsg("Start: "+STAGES[idx].label);
   }
   function pauseTimer(){
-    var now=Date.now()+serverTimeOffset; // S3: czas serwerowy
+    var now=Date.now()+serverTimeOffset;
     var sLeft=timerStartedAt>0?Math.max(0,Math.round(timerDuration-(now-timerStartedAt)/1000)):secondsLeft;
     setTimerPausedSecondsLeft(sLeft);
     setTimerPaused(true);
@@ -1448,7 +1495,7 @@ function App({roomCode,role,playerId,playerName}) {
     showMsg("Pauza");
   }
   function resumeTimer(){
-    var now=Date.now()+serverTimeOffset; // S3: czas serwerowy
+    var now=Date.now()+serverTimeOffset;
     var sLeft=timerPausedSecondsLeft!==null?timerPausedSecondsLeft:secondsLeft;
     // Przesuń timerStartedAt tak żeby secondsLeft się zgadzało
     setTimerStartedAt(now-(timerDuration-sLeft)*1000);
@@ -1473,6 +1520,8 @@ function App({roomCode,role,playerId,playerName}) {
 
   function advanceStage(){if(timerRef.current)clearInterval(timerRef.current);setTimerRunning(false);
     resetP(); // zamknij otwarty formularz
+    // Wyczyść WSZYSTKIE blokady transakcji (nie tylko bieżącego gracza)
+    if(db&&roomCode){db.ref("rooms/"+roomCode+"/txMeetLock").remove();db.ref("rooms/"+roomCode+"/txLock").remove();}
     if(stageIdx<STAGES.length-1)startStage(stageIdx+1);else{if(bnbEnabled&&!bnbSettled)settleBnb();applyPlotPenalties();showMsg("Rozgrywka zakończona!");}}
 
   // Trade partner & phase helpers
@@ -1483,13 +1532,13 @@ function App({roomCode,role,playerId,playerName}) {
 
   function resetP(keepLock){
     setShowP(false);setPMode(null);setPStep(1);setTFam(null);setSelItems([]);setPrice(0);setECash(0);setRTx(null);setSending(false);
-    // T5 – zwolnij blokadę formularza TX (chyba że keepLock=true)
+    // zwolnij blokadę formularza TX (chyba że keepLock=true)
     if(!keepLock&&db&&activeTxLockRef.current){
       var lk=activeTxLockRef.current;activeTxLockRef.current=null;
       db.ref("rooms/"+roomCode+"/"+lk).transaction(function(v){return v===sessionId.current?null:v;});
     }
   }
-  // T5 – otwieranie formularza TX z blokadą per rodzina + meeting lock
+  // otwieranie formularza TX z blokadą per rodzina + meeting lock
   function openTxForm(mode,extra){
     // Blokada handlu poza turami (po starcie gry)
     if(gameActive&&!isTradePhase){showMsg("Handel jest możliwy tylko w trakcie tur handlowych!");return;}
@@ -1515,7 +1564,7 @@ function App({roomCode,role,playerId,playerName}) {
     });
   }
   function toggleItem(item){
-    // Nr 5: prevent selecting locked cards
+    // prevent selecting locked cards
     if(isCardLocked(item.id)){showMsg("Karta \""+item.name+"\" jest zablokowana w innej transakcji!");return;}
     if(item.cat===C_BNB){
       // BnB: toggle all cards with same bnbOrigin as a group
@@ -1526,9 +1575,6 @@ function App({roomCode,role,playerId,playerName}) {
       setSelItems(p=>p.find(i=>i.id===item.id)?p.filter(i=>i.id!==item.id):p.concat([item]));
     }
   }
-  // BnB quantity selection for transactions
-  const [bnbQty,setBnbQty]=useState({});
-  function setBnbSelQty(origin,qty){setBnbQty(prev=>({...prev,[origin]:qty}));}
 
   function activateBnb(){
     setFd(prev=>{var n={...prev};FO.forEach(fId=>{n[fId]={...n[fId],items:n[fId].items.concat(makeBnbCards(fId))};});return n;});
@@ -1544,7 +1590,7 @@ function App({roomCode,role,playerId,playerName}) {
       var cost=300; // ZAWSZE 300$ dla dostawcy
       var bonus=soldAll?100:0;
       setFd(prev=>{var n={...prev};
-        // S4 – guard: nie zejdź poniżej 0
+        // guard: nie zejdź poniżej 0
         var netCost=Math.min(cost-bonus,n[fId].cash);
         n[fId]={...n[fId],cash:n[fId].cash-netCost};return n;});
       // Wpis 1: Opłata dla dostawcy (zawsze)
@@ -1560,7 +1606,25 @@ function App({roomCode,role,playerId,playerName}) {
     setBnbSettled(true);showMsg("Biznes na boku – rozliczono!");
   }
 
-  // P1-3: Opcjonalny parametr fdOverride dla walidacji na aktualnym stanie
+  // Opcjonalny parametr fdOverride dla walidacji na aktualnym stanie
+  // Atomowe operacje na transakcjach w Firebase
+  function fbPrependTx(newTx){
+    if(!db||!roomCode)return;
+    db.ref("rooms/"+roomCode+"/gameState/txs").transaction(function(cur){
+      var arr=Array.isArray(cur)?cur:(cur&&typeof cur==="object"?Object.values(cur):[]);
+      if(arr.some(function(t){return t&&t.id===newTx.id;}))return arr;
+      return[newTx,...arr];
+    });
+  }
+  function fbUpdateTxStatus(txId,fields){
+    if(!db||!roomCode)return;
+    db.ref("rooms/"+roomCode+"/gameState/txs").transaction(function(cur){
+      if(!cur)return cur;
+      var arr=Array.isArray(cur)?cur:(typeof cur==="object"?Object.values(cur):null);
+      if(!arr)return cur;
+      return arr.map(function(t){return t&&t.id===txId?Object.assign({},t,fields):t;});
+    });
+  }
   function validateMapDuplicate(targetFam, items, fdOverride) {
     var fdToUse = fdOverride || fd;
     var mapItems = items.filter(i => i.cat === C_MAP);
@@ -1575,22 +1639,32 @@ function App({roomCode,role,playerId,playerName}) {
     if(!validateMapDuplicate(tFam,selItems,stateRef.current.fd)){showMsg("Ta rodzina już posiada ten fragment mapy!");return;}
     var locked=selItems.filter(i=>isCardLocked(i.id));
     if(locked.length){showMsg("Karta \""+locked[0].name+"\" jest zablokowana w innej transakcji!");return;}
-    // S2 – sprawdź duplikat
+    // sprawdź duplikat
     var itemIds=selItems.map(i=>i.id).sort().join(",");
     var dup=txs.find(t=>t.type==="sale"&&t.from===cf&&t.to===tFam&&(t.status==="pending"||t.status==="awaiting_response")&&t.offeredItems.map(i=>i.id).sort().join(",")===itemIds);
     if(dup){showMsg("Taka oferta sprzedaży już oczekuje na odpowiedź!");return;}
-    setTxs(p=>[{id:txId(),type:"sale",from:cf,to:tFam,offeredItems:selItems.slice(),price:Number(price),status:"pending"},...p]);setSending(true);resetP();showMsg("Oferta sprzedaży wysłana");}
+    var newTx={id:txId(),type:"sale",from:cf,to:tFam,offeredItems:selItems.slice(),price:Number(price),status:"pending"};
+    setTxs(p=>[newTx,...p]);fbPrependTx(newTx);setSending(true);resetP();showMsg("Oferta sprzedaży wysłana");}
   function submitBarter(){if(!tFam||!selItems.length)return;
     if(!validateMapDuplicate(tFam,selItems,stateRef.current.fd)){showMsg("Ta rodzina już posiada ten fragment mapy!");return;}
     var locked=selItems.filter(i=>isCardLocked(i.id));
     if(locked.length){showMsg("Karta \""+locked[0].name+"\" jest zablokowana w innej transakcji!");return;}
-    // S2 – sprawdź duplikat
+    // sprawdź duplikat
     var itemIds2=selItems.map(i=>i.id).sort().join(",");
     var dup2=txs.find(t=>t.type==="barter"&&t.from===cf&&t.to===tFam&&(t.status==="pending"||t.status==="awaiting_response")&&t.offeredItems.map(i=>i.id).sort().join(",")===itemIds2);
     if(dup2){showMsg("Taka propozycja barteru już oczekuje na odpowiedź!");return;}
-    setTxs(p=>[{id:txId(),type:"barter",from:cf,to:tFam,offeredItems:selItems.slice(),offeredCash:Number(eCash)||0,responseItems:null,responseCash:0,status:"awaiting_response"},...p]);setSending(true);resetP();showMsg("Propozycja barteru wysłana");}
-  function submitResponse(){if(!rTx||!selItems.length)return;setSending(true);setTxs(p=>p.map(t=>t.id!==rTx?t:{...t,responseItems:selItems.slice(),responseCash:Number(eCash)||0,status:"pending"}));resetP();showMsg("Kontr-oferta wysłana!");}
-  // P1-3: Czysta funkcja walidacji i transferu transakcji (refaktor v1.24.1)
+    var newTx={id:txId(),type:"barter",from:cf,to:tFam,offeredItems:selItems.slice(),offeredCash:Number(eCash)||0,responseItems:null,responseCash:0,status:"awaiting_response"};
+    setTxs(p=>[newTx,...p]);fbPrependTx(newTx);setSending(true);resetP();showMsg("Propozycja barteru wysłana");}
+  function submitResponse(){if(!rTx||!selItems.length)return;
+    // walidacja duplikatu mapy w kontr-ofercie
+    var origTx=txs.find(t=>t.id===rTx);
+    if(origTx&&!validateMapDuplicate(origTx.from,selItems,stateRef.current.fd)){showMsg("Ta rodzina już posiada ten fragment mapy!");return;}
+    setSending(true);
+    var respFields={responseItems:selItems.slice(),responseCash:Number(eCash)||0,status:"pending"};
+    setTxs(p=>p.map(t=>t.id!==rTx?t:{...t,...respFields}));
+    fbUpdateTxStatus(rTx,respFields);
+    resetP();showMsg("Kontr-oferta wysłana!");}
+  // Czysta funkcja walidacji i transferu transakcji
   // Zwraca {ok:true, newFd} lub {ok:false, error:"..."}
   function validateAndApplyTx(currentFd, tx) {
     var seller=currentFd[tx.from],buyer=currentFd[tx.to];
@@ -1661,29 +1735,43 @@ function App({roomCode,role,playerId,playerName}) {
       },function(err,committed,snapshot){
         if(err){showMsg("Błąd akceptacji: "+err.message);return;}
         if(!committed){
+          // Przed odrzuceniem sprawdź, czy inna instancja nie zaakceptowała już tej transakcji
+          // (fd transaction mogła abortować bo karty/gotówka już przeniesione = tx jest accepted)
           showMsg("Operacja odrzucona – warunki transakcji nie są już spełnione.");
-          setTxs(function(p){return p.map(function(t){return t.id===txId?{...t,status:"rejected"}:t;});});
+          setTxs(function(p){return p.map(function(t){return t.id===txId&&t.status!=="accepted"?{...t,status:"rejected"}:t;});});
+          // Atomowy zapis rejected tylko jeśli status nadal pending
+          if(db&&roomCode){
+            db.ref("rooms/"+roomCode+"/gameState/txs").transaction(function(cur){
+              if(!cur)return cur;
+              var arr=Array.isArray(cur)?cur:(typeof cur==="object"?Object.values(cur):null);
+              if(!arr)return cur;
+              return arr.map(function(t){return t&&t.id===txId&&(t.status==="pending"||t.status==="awaiting_response")?Object.assign({},t,{status:"rejected"}):t;});
+            });
+          }
           return;
         }
         var newFd=snapshot.val();
         fbIncoming.current=true;
         if(newFd)setFd(newFd);
         setTxs(function(p){return p.map(function(t){return t.id===txId?{...t,status:"accepted",phase:getPhaseIndex(stageIdx)}:t;});});
+        fbUpdateTxStatus(txId,{status:"accepted",phase:getPhaseIndex(stageIdx)});
         prevSyncRef.current=Object.assign({},prevSyncRef.current,{fd:newFd});
         setTimeout(function(){fbIncoming.current=false;},50);
         showMsg("Operacja zrealizowana!");
       });
     });
   }
-  function rejectTx(txId){setTxs(p=>p.map(t=>t.id===txId?{...t,status:"rejected"}:t));showMsg("Operacja odrzucona.");}
+  function rejectTx(txId){setTxs(p=>p.map(t=>t.id===txId?{...t,status:"rejected"}:t));fbUpdateTxStatus(txId,{status:"rejected"});showMsg("Operacja odrzucona.");}
 
   function rollDice(fId,rollIdx){
-    // P1 – blokada lokalna przed podwójnym kliknięciem
+    // Ślepy Los: rzut wykonuje wyłącznie Szeryf (nie gracz, nie Szeryf2)
+    if(!isSheriff)return;
+    // blokada lokalna przed podwójnym kliknięciem
     var lockKey=fId+"-"+rollIdx;
     if(rollingInProgress.current[lockKey])return;
     rollingInProgress.current[lockKey]=true;
 
-    // P5 – blokada Firebase przed równoczesnym rzutem dwóch szeryfów
+    // blokada Firebase przed równoczesnym rzutem dwóch szeryfów
     if(!db){_doRoll(fId,rollIdx,lockKey);return;}
     var lockRef=db.ref("rooms/"+roomCode+"/rollLock/"+lockKey);
     lockRef.transaction(function(current){
@@ -1703,10 +1791,10 @@ function App({roomCode,role,playerId,playerName}) {
 
   function _doRoll(fId,rollIdx,lockKey,lockRef){
 
-    // P4 – odczyt policyUsed z closure (stateRef) zamiast setter-hack
+    // odczyt policyUsed z closure (stateRef) zamiast setter-hack
     var policyUsed=(stateRef.current.blindFate&&stateRef.current.blindFate[fId]&&stateRef.current.blindFate[fId].rolls&&stateRef.current.blindFate[fId].rolls[rollIdx])?stateRef.current.blindFate[fId].rolls[rollIdx].policyUsed||null:null;
 
-    // P2 – flaga blokująca sync blindFate podczas animacji
+    // flaga blokująca sync blindFate podczas animacji
     diceRolling.current=true;
 
     // Start rolling animation
@@ -1721,7 +1809,7 @@ function App({roomCode,role,playerId,playerName}) {
       setBlindFate(prev=>{var n={...prev};var bf={...(n[fId]||{})};var rolls=(bf.rolls||[]).slice();
         var roll={...rolls[rollIdx]};
         roll.rolling=false;roll.dice1=d1;roll.dice2=d2;roll.sum=sum;roll.event=ev;roll.resolved=true;roll.showDice=true;roll.showCard=false;
-        // P4 – użyj policyUsed z closure
+        // użyj policyUsed z closure
         var pu=policyUsed,ne=0,net="";
         if(ev.type==="loss"){var base=ev.amount;if(pu===100)ne=0;else if(pu===50)ne=Math.round(base/2);else ne=base;net=ne===0?"0 $":ne+" $";}
         else if(ev.type==="loss_resources"){if(pu===100){ne=0;net="0% zasobów";}else if(pu===50){ne=-5;net="-5% zasobów";}else{ne=-10;net="-10% zasobów";}}
@@ -1737,7 +1825,7 @@ function App({roomCode,role,playerId,playerName}) {
           rolls[rollIdx]={...rolls[rollIdx],showCard:true,showDice:false};bf.rolls=rolls;n[fId]=bf;return n;});
 
         var ev2=BLIND_FATE_EVENTS[sum];
-        // P4 – oblicz netEffect z closure zamiast setter-hack
+        // oblicz netEffect z closure zamiast setter-hack
         var pu=policyUsed,ne=0,net="";
         if(ev2.type==="loss"){var base2=ev2.amount;if(pu===100)ne=0;else if(pu===50)ne=Math.round(base2/2);else ne=base2;net=ne===0?"0 $":ne+" $";}
         else if(ev2.type==="loss_resources"){if(pu===100){ne=0;net="0% zasobów";}else if(pu===50){ne=-5;net="-5% zasobów";}else{ne=-10;net="-10% zasobów";}}
@@ -1763,17 +1851,19 @@ function App({roomCode,role,playerId,playerName}) {
           setBlindFate(prev=>{var n={...prev};var bf={...(n[fId]||{})};var rls=(bf.rolls||[]).slice();
             if(rls[rollIdx])rls[rollIdx]={...rls[rollIdx],showCard:false,showDice:false};
             bf.rolls=rls;n[fId]=bf;return n;});
-          diceRolling.current=false;           // P2 – odblokuj sync
-          delete rollingInProgress.current[lockKey]; // P1 – odblokuj rzut
-          if(lockRef)lockRef.remove();         // P5 – zwolnij Firebase lock
+          diceRolling.current=false;           // odblokuj sync
+          delete rollingInProgress.current[lockKey]; // odblokuj rzut
+          if(lockRef)lockRef.remove();         // zwolnij Firebase lock
         },20000));
       },2000));
     },2000));
   }
 
   var rootRef=React.useRef(null);
-  // P2-2: Pusty dependency array – mount-once
-  useEffect(()=>{var el=rootRef.current;if(!el)return;function h(e){var btn=e.target.closest("[data-roll]");if(!btn)return;var p=btn.getAttribute("data-roll").split("-");rollDice(p[0],parseInt(p[1]));}el.addEventListener("click",h);return()=>el.removeEventListener("click",h);},[]);
+  // mount-once
+  var rollDiceRef=useRef(rollDice);
+  useEffect(()=>{rollDiceRef.current=rollDice;});
+  useEffect(()=>{var el=rootRef.current;if(!el)return;function h(e){var btn=e.target.closest("[data-roll]");if(!btn)return;var p=btn.getAttribute("data-roll").split("-");rollDiceRef.current(p[0],parseInt(p[1]));}el.addEventListener("click",h);return()=>el.removeEventListener("click",h);},[]);
 
   return (<div ref={rootRef}>
     <ConnectionIndicator online={online}/>
@@ -1789,7 +1879,6 @@ function App({roomCode,role,playerId,playerName}) {
       var totalSeconds=curStage?stageDurations[curStage.id]*60:0;
       var mm=Math.floor(secondsLeft/60),ss=secondsLeft%60;
       var timeStr=(curStage&&curStage.type!=="end")?(timerPaused?"(P) ":"")+mm+":"+(ss<10?"0":"")+ss:"0:00";
-      var isLow=secondsLeft<=30&&!!curStage;var isCrit=secondsLeft<=10&&!!curStage;
       // Phase label
       var phaseLabel="";
       if(curStage){
@@ -1811,26 +1900,17 @@ function App({roomCode,role,playerId,playerName}) {
           stageDetail="Odprawa "+knN;
         }
       }
-      // Next turn info
-      var nextTurnStage=null;
-      for(var ni=stageIdx+1;ni<STAGES.length;ni++){if(STAGES[ni].type==="turn"){nextTurnStage=STAGES[ni];break;}}
-      var nextStr="";
-      if(nextTurnStage&&nextTurnStage.pairingIdx!==null){
-        var np=PAIRINGS[nextTurnStage.pairingIdx];
-        nextStr=np.map(p=>FM[p[0]].nom+" ↔ "+FM[p[1]].nom).join("   \u00b7   ");
-      }
       return(<div style={{display:"flex",borderBottom:"2px solid #4C130F",overflowX:"auto",background:"rgba(0,0,0,0.18)",transition:"background 0.5s"}}>
-        <div onClick={()=>{setViewSheriff(true);setSheriffViewFamily(null);}} style={{padding:"6px 16px",cursor:"pointer",fontWeight:viewSheriff?700:600,fontSize:14,background:viewSheriff?"rgba(139,105,20,0.85)":"rgba(255,255,255,0.12)",color:"#FFFFFF",borderBottom:viewSheriff?"3px solid #D4A853":"3px solid transparent",transition:"all 0.15s",whiteSpace:"nowrap",letterSpacing:"0.05em",display:"flex",alignItems:"center",flexShrink:0}} className="wt">
+        <div onClick={()=>{setViewSheriff(true);setSheriffViewFamily(null);}} style={{padding:"6px 16px",cursor:"pointer",fontWeight:viewSheriff&&!sheriffViewFamily?700:600,fontSize:14,background:viewSheriff&&!sheriffViewFamily?"rgba(139,105,20,0.85)":"rgba(255,255,255,0.12)",color:"#FFFFFF",borderBottom:viewSheriff&&!sheriffViewFamily?"3px solid #D4A853":"3px solid transparent",transition:"all 0.15s",whiteSpace:"nowrap",letterSpacing:"0.05em",display:"flex",alignItems:"center",flexShrink:0}} className="wt">
           SZERYF
         </div>
         {FO.map(fId=>{
-          var act=!viewSheriff&&cf===fId,col=FM[fId].col;
+          var act=sheriffViewFamily===fId,col=FM[fId].col;
           var FGREYS={adams:"#E9CDC2",bennet:"#C0B8C0",clinton:"#CECDD4",dexter:"#CED6D5"};
           var inactBg=FGREYS[fId]||"#E0D8D0";
           var lbFd=lobbyPlayers[fId];
           var lbMembers=lbFd&&lbFd.members?Object.entries(lbFd.members).map(([id,m])=>m.name||null).filter(Boolean):[];
-          var lbCount=lbMembers.length;
-          return (<div key={fId} onClick={()=>{setCf(fId);setViewSheriff(false);setSheriffViewFamily(null);setActiveTab("inv");}}
+          return (<div key={fId} onClick={()=>{setCf(fId);setSheriffViewFamily(fId);setActiveTab("inv");}}
             style={{padding:"6px 16px 5px",cursor:"pointer",fontWeight:act?700:600,fontSize:14,background:act?col:inactBg,color:act?"#fff":col,borderBottom:act?"3px solid "+col:"3px solid transparent",transition:"all 0.15s",whiteSpace:"nowrap",flexShrink:0}} className="wt">
             {FM[fId].nom}
           </div>);
@@ -1931,7 +2011,7 @@ function App({roomCode,role,playerId,playerName}) {
                     bnbEnabled:bnbEnabled, mapEnabled:mapEnabled, revEnabled:revEnabled,
                     mapBonusClaimed:mapBonusClaimed, revDuels:Array.isArray(revDuels)?revDuels:[]
                   });
-                }).catch(function(e){alert("Błąd generowania PDF: "+e.message);console.error(e);});
+                }).catch(function(e){showMsg("Błąd generowania PDF: "+e.message);});
               }} style={{padding:"10px 24px",fontSize:14,fontFamily:"'Alegreya Sans', sans-serif",fontWeight:500,background:"url("+IMG_BASE+"wynik_przycisk-1.png) center/contain no-repeat",color:"#F8E7CC",border:"none",borderRadius:0,cursor:"pointer",minWidth:180,minHeight:44}}>Raport z rozgrywki</button>
               {stageIdx>=STAGES.length-1&&!isSheriff2&&<button onClick={()=>{if(window.confirm("Czy na pewno chcesz zarchiwizować rozgrywkę? Uczestnicy stracą dostęp.")){db.ref("rooms/"+roomCode+"/meta/status").set("archived").then(()=>{showMsg("Rozgrywka zarchiwizowana. Uczestnicy nie mogą już dołączyć.","success");}).catch(e=>{showMsg("Błąd archiwizacji: "+e.message);});}}} style={{padding:"10px 24px",fontSize:14,fontFamily:"'Alegreya Sans', sans-serif",fontWeight:500,background:"url("+IMG_BASE+"wynik_przycisk-1.png) center/contain no-repeat",color:"#F8E7CC",border:"none",borderRadius:0,cursor:"pointer",minWidth:180,minHeight:44}}>Archiwizuj rozgrywkę</button>}
             </div>
@@ -2076,7 +2156,7 @@ function App({roomCode,role,playerId,playerName}) {
             <img src={IMG_BASE+"kasa_punkty.png"} style={{width:"100%",height:"auto",display:"block",marginBottom:8}} alt="Kasa – punkty"/>
           </div>);
           })()}
-          {activeTab==="map"&&<MapTracker items={familyData.items} mapBonusClaimed={mapBonusClaimed} fId={familyId} mapLayout={mapLayout} setMapLayout={setMapLayout} onClaim={claimMapBonus} readonly={!!(viewSheriff&&sheriffViewFamily)}/>}
+          {activeTab==="map"&&mapEnabled&&<MapTracker items={familyData.items} mapBonusClaimed={mapBonusClaimed} fId={familyId} mapLayout={mapLayout} setMapLayout={setMapLayout} onClaim={claimMapBonus} readonly={!!(viewSheriff&&sheriffViewFamily)}/>}
           {activeTab==="bnb"&&bnbEnabled&&(()=>{
             var allBnb=familyData.items.filter(i=>i.cat===C_BNB);
             var forSale=allBnb.filter(i=>i.bnbOrigin===familyId);
@@ -2084,7 +2164,7 @@ function App({roomCode,role,playerId,playerName}) {
             var sold=myProduct.qty-forSale.length;
             return(<BnbTab familyId={familyId} sold={sold} total={myProduct.qty} familyData={familyData}/>);
           })()}
-          {activeTab==="fate"&&<BlindFateFamily fId={familyId} blindFate={blindFate}/>}
+          {activeTab==="fate"&&fateEnabled&&<BlindFateFamily fId={familyId} blindFate={blindFate}/>}
           {activeTab==="rel"&&relationsUnlocked&&(()=>{
             var CATS=[
               {key:"partnership",   label:"Partnerstwo",          desc:["Zespół dbał tylko o swoje interesy","Zespół dbał o interesy dwóch stron"]},
@@ -2094,6 +2174,8 @@ function App({roomCode,role,playerId,playerName}) {
             var others=FO.filter(f=>f!==familyId);
             function setRating(target,cat,val){
               setRelations(prev=>{var n={...prev};if(!n[familyId])n[familyId]={};if(!n[familyId][target])n[familyId][target]={};n[familyId][target]={...n[familyId][target],[cat]:val};return n;});
+              // direct write do Firebase (gracz zapisuje tylko swoją rodzinę)
+              if(db&&roomCode)db.ref("rooms/"+roomCode+"/gameState/relations/"+familyId+"/"+target+"/"+cat).set(val);
             }
             function getRating(target,cat){return (relations[familyId]&&relations[familyId][target]&&relations[familyId][target][cat])||0;}
             return (<div>
@@ -2134,7 +2216,12 @@ function App({roomCode,role,playerId,playerName}) {
             {(()=>{var myWaiting=sheriffCalls.filter(c=>c.fId===cf&&c.status==="waiting");var hasWaiting=myWaiting.length>0;
               return(<div style={{position:"relative",width:360,cursor:hasWaiting?"not-allowed":"pointer",background:"transparent"}} onClick={()=>{
                   if(hasWaiting)return;
-                  setSheriffCalls(prev=>[...prev,{fId:cf,status:"waiting",ts:Date.now()}]);
+                  var newCall={fId:cf,status:"waiting",ts:Date.now()};
+                  setSheriffCalls(prev=>[...prev,newCall]);
+                  // direct write do Firebase (transaction zapobiega nadpisaniu)
+                  if(db&&roomCode)db.ref("rooms/"+roomCode+"/gameState/sheriffCalls").transaction(function(cur){
+                    var arr=Array.isArray(cur)?cur:(cur&&typeof cur==="object"?Object.values(cur):[]);return[...arr,newCall];
+                  });
                   showMsg("Wezwano Szeryfa!");
                 }}>
                 <img src={IMG_BASE+"przycisk_wezwij-szeryfa.png"} style={{width:360,height:119,display:"block",filter:hasWaiting?"brightness(0.5) saturate(0.6)":"none",transition:"filter 0.2s"}} alt="Wezwij Szeryfa"/>
@@ -2181,7 +2268,7 @@ function App({roomCode,role,playerId,playerName}) {
               // Zbierz ID kart zaangażowanych w transakcje (pending, awaiting, accepted)
               var committedIds=new Set();
               txs.forEach(function(t){
-                if(t.status==="rejected"||t.status==="cancelled")return;
+                if(t.status==="rejected"||t.status==="cancelled"||t.status==="undone")return;
                 if(t.from===cf&&t.offeredItems)t.offeredItems.forEach(function(i){committedIds.add(i.id);});
                 if(t.to===cf&&t.responseItems)t.responseItems.forEach(function(i){committedIds.add(i.id);});
               });
@@ -2271,7 +2358,7 @@ function App({roomCode,role,playerId,playerName}) {
             <div style={{maxHeight:300,overflowY:"auto"}}>{(()=>{
               var committedIds2=new Set();
               txs.forEach(function(t){
-                if(t.status==="rejected"||t.status==="cancelled")return;
+                if(t.status==="rejected"||t.status==="cancelled"||t.status==="undone")return;
                 if(t.from===cf&&t.offeredItems)t.offeredItems.forEach(function(i){committedIds2.add(i.id);});
                 if(t.to===cf&&t.responseItems)t.responseItems.forEach(function(i){committedIds2.add(i.id);});
               });

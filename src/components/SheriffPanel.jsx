@@ -1,12 +1,10 @@
 /* WDZ Online – components/SheriffPanel.jsx */
-import { FM, FO, C_RES, C_COMP, C_NRES, C_NCOMP, C_PLOT, C_MAP, C_BNB, BNB_PRODUCTS, STAGES, PHASE_NAMES, PAIRINGS, getMeetingPartner, BLIND_FATE_EVENTS } from "../game/constants.js";
-import { calcScore, calcRelationScore, fmtItems, buildView } from "../game/scoring.js";
-import { IMG_BASE, toSlug, imgUrl, mapImgUrl, getRevImg, ensureArray } from "../utils/index.js";
-import { btnS, InfoPopup, StarRating, TaskHeader } from "./ui.jsx";
-import { BlindFateFamily } from "./BlindFate.jsx";
-import { RewolwerowiecNew } from "./Revolver.jsx";
-import { DebriefingPanel } from "./DebriefingPanel.jsx";
-import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { FM, FO, C_PLOT, C_BNB, BNB_PRODUCTS, STAGES, PAIRINGS } from "../game/constants.js";
+import { txId } from "../game/cards.js";
+import { calcScore, calcRelationScore, fmtItems } from "../game/scoring.js";
+import { IMG_BASE, getRevImg } from "../utils/index.js";
+import { btnS } from "./ui.jsx";
+import React, { useState, useEffect, useRef } from "react";
 
 function buildFamilyLink(roomCode, fId) {
   var base = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, "/");
@@ -32,9 +30,8 @@ export function SheriffPlanningTab({readOnly,roomCode,lobbyPlayers,gameStarted,s
 
   function getLobbyMembers(fId){var fd=lobbyPlayers[fId];if(!fd||!fd.members)return[];return Object.entries(fd.members).map(([id,m])=>({id,...m})).filter(m=>m.name);}
   function isOnlineMember(m){return m.lastSeen&&(Date.now()-m.lastSeen)<90000;}
-  // P3-3: Feedback błędu clipboard
-  function copyLnk(fId){var lnk=buildFamilyLink(roomCode,fId);navigator.clipboard.writeText(lnk).then(()=>{setCpd(p=>({...p,[fId]:true}));setTimeout(()=>setCpd(p=>({...p,[fId]:false})),2500);}).catch(()=>{showMsg("Błąd kopiowania – skopiuj ręcznie link z paska adresu");});}
-  function copyAll(){var txt=FO.map(fId=>FM[fId].nom+": "+buildFamilyLink(roomCode,fId)).join("\n");navigator.clipboard.writeText(txt).then(()=>{setCpAll(true);setTimeout(()=>setCpAll(false),2500);}).catch(()=>{showMsg("Błąd kopiowania – skopiuj linki pojedynczo");});}
+  function copyLnk(fId){var lnk=buildFamilyLink(roomCode,fId);if(!navigator.clipboard||!navigator.clipboard.writeText){showMsg("Kopiowanie niedostępne – skopiuj link ręcznie z paska adresu");return;}navigator.clipboard.writeText(lnk).then(()=>{setCpd(p=>({...p,[fId]:true}));setTimeout(()=>setCpd(p=>({...p,[fId]:false})),2500);}).catch(()=>{showMsg("Błąd kopiowania – skopiuj ręcznie link z paska adresu");});}
+  function copyAll(){var txt=FO.map(fId=>FM[fId].nom+": "+buildFamilyLink(roomCode,fId)).join("\n");if(!navigator.clipboard||!navigator.clipboard.writeText){showMsg("Kopiowanie niedostępne – skopiuj linki ręcznie");return;}navigator.clipboard.writeText(txt).then(()=>{setCpAll(true);setTimeout(()=>setCpAll(false),2500);}).catch(()=>{showMsg("Błąd kopiowania – skopiuj linki pojedynczo");});}
   var connFam=FO.filter(f=>{var fd=lobbyPlayers[f];if(!fd)return false;if(fd.members)return Object.keys(fd.members).length>0;return fd.connected;});
   var canStart=!readOnly&&connFam.length>0;
 
@@ -177,7 +174,7 @@ export function SheriffPanel({readOnly,fd,txs,consultations,setConsultations,con
   var allTx=txs.filter(t=>t.status==="accepted"&&t.type!=="fate"&&t.type!=="map_bonus"&&t.type!=="penalty"&&t.type!=="plot_cost"&&t.type!=="bnb_settle"&&t.type!=="bnb_bonus"&&t.type!=="revolver"&&t.type!=="consultation_sold"&&t.type!=="consultation_refund");
   var penaltyTx=txs.filter(t=>t.status==="accepted"&&(t.type==="penalty"||t.type==="plot_cost"));
 
-  // Nr 17: Undo last transaction (sheriff only)
+  // Cofnij ostatnią transakcję (tylko Szeryf)
   const [undoConfirm,setUndoConfirm]=React.useState(false);
   function undoLastTx(){
     var last=allTx[0]; // newest first
@@ -230,7 +227,7 @@ export function SheriffPanel({readOnly,fd,txs,consultations,setConsultations,con
     // Sheriff calls (Wezwij Szeryfa)
     sheriffCalls.filter(c=>c.status==="waiting").forEach(c=>{tryAdd("call_"+c.fId+"_"+c.ts,FM[c.fId].nom+" wzywa Szeryfa!",true);});
     if(newA.length>0)setAlerts(prev=>[...newA,...prev]);
-  });
+  },[gameStarted,stageIdx,revActive,fateEnabled,blindFate,txs,sheriffCalls]);
 
   // Consultation helpers (lifted from IIFE)
   function toggleNotes(fId){setExpandedNotes(prev=>({...prev,[fId]:!prev[fId]}));}
@@ -525,9 +522,9 @@ export function SheriffPanel({readOnly,fd,txs,consultations,setConsultations,con
                 <div style={{fontSize:13,fontWeight:700,color:f.col,marginBottom:6}} className="wt">{f.nom}</div>
                 <div style={{display:"flex",gap:4,marginBottom:8,flexWrap:"wrap"}}>
                   <button style={{...btnS("fate"),fontSize:13,padding:"3px 8px",opacity:pol.p50?0.4:1}} onClick={()=>!readOnly&&activatePolicy(fId,"p50")} disabled={readOnly||!!pol.p50}>Polisa 50% (30$)</button>
-                  {pol.p50==="owned"&&<button style={{fontSize:13,padding:"3px 8px",background:"#C09090",color:"#fff",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"inherit",fontWeight:600}} onClick={()=>!readOnly&&undoPolicy(fId,"p50")}>Cofnij 50%</button>}
+                  {pol.p50==="owned"&&<button style={{fontSize:13,padding:"3px 8px",background:"#C09090",color:"#fff",border:"none",borderRadius:4,cursor:readOnly?"not-allowed":"pointer",fontFamily:"inherit",fontWeight:600,opacity:readOnly?0.4:1}} onClick={()=>!readOnly&&undoPolicy(fId,"p50")} disabled={readOnly}>Cofnij 50%</button>}
                   <button style={{...btnS("fate"),fontSize:13,padding:"3px 8px",opacity:pol.p100?0.4:1}} onClick={()=>!readOnly&&activatePolicy(fId,"p100")} disabled={readOnly||!!pol.p100}>Polisa 100% (50$)</button>
-                  {pol.p100==="owned"&&<button style={{fontSize:13,padding:"3px 8px",background:"#C09090",color:"#fff",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"inherit",fontWeight:600}} onClick={()=>!readOnly&&undoPolicy(fId,"p100")}>Cofnij 100%</button>}
+                  {pol.p100==="owned"&&<button style={{fontSize:13,padding:"3px 8px",background:"#C09090",color:"#fff",border:"none",borderRadius:4,cursor:readOnly?"not-allowed":"pointer",fontFamily:"inherit",fontWeight:600,opacity:readOnly?0.4:1}} onClick={()=>!readOnly&&undoPolicy(fId,"p100")} disabled={readOnly}>Cofnij 100%</button>}
                 </div>
                 {rollsPending===0&&rollsDone<2&&<div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
                   <button style={{...btnS("fate"),fontSize:13,padding:"3px 8px"}} onClick={()=>!readOnly&&prepareRoll(fId,null)}>Bez polisy</button>
