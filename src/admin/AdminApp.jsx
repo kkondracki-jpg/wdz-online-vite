@@ -325,6 +325,7 @@ function RoomsView({onOpenReport}) {
         var t=child.val();
         if(t.roomCode) map[t.roomCode] = t.sheriffCode || "";
       });
+      console.log("[WDZ-DEBUG] RoomsView tickets listener, count:", Object.keys(map).length);
       setTickets(map);
     });
     var ref = db.ref("rooms");
@@ -510,6 +511,7 @@ function TicketsView({trainers: allTrainers}) {
       setLoading(false);
       var arr = [];
       if (snap.exists()) snap.forEach(c => arr.push({id:c.key,...c.val()}));
+      console.log("[WDZ-DEBUG] tickets listener fired, count:", arr.length, arr.map(t => t.sheriffCode));
       arr.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
       setTickets(arr);
     });
@@ -3621,7 +3623,6 @@ function MonitorTab() {
   }
 
   var playing = rooms.filter(r => r.status === "playing");
-  var lobby = rooms.filter(r => r.status === "lobby");
 
   // Auto-connect: jeśli dokładnie 1 aktywna rozgrywka, podłącz automatycznie
   if(!loading && playing.length === 1 && !selectedRoom) {
@@ -3629,61 +3630,25 @@ function MonitorTab() {
     return <div style={{textAlign:"center", padding:40, color:C.gold}}>Podłączanie do {playing[0].code}…</div>;
   }
 
-  function RoomCard({r}) {
-    var sCol = r.status === "playing" ? C.greenLt : r.status === "lobby" ? C.gold : C.textMut;
-    var sLabel = r.status === "playing" ? "W toku" : r.status === "lobby" ? "Lobby" : r.status === "finished" ? "Zakończona" : "Wygasła";
-    var clickable = r.status === "playing" || r.status === "lobby" || r.status === "finished";
+  // Wiele aktywnych – pozwól wybrać (rzadki przypadek)
+  if(!loading && playing.length > 1) {
     return (
-      <Card style={{cursor: clickable ? "pointer" : "default",
-        opacity: r.status === "expired" ? 0.6 : 1,
-        transition: "border-color .15s",
-        borderColor: r.status === "playing" ? C.gold+"55" : C.border}}
-        onClick={() => { if(clickable) setSelectedRoom(r.code); }}>
-        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8}}>
-          <span style={{fontSize:18, fontWeight:700, color:C.text, letterSpacing:1}}>{r.code}</span>
-          <Badge color={sCol}>{sLabel}</Badge>
+      <div>
+        <div style={{textAlign:"center", color:C.textMut, padding:40, fontSize:15}}>
+          Wykryto {playing.length} aktywne rozgrywki. Wybierz jedną:
         </div>
-        {r.stageLabel !== "–" && <div style={{fontSize:13, color:C.textDim, marginBottom:4}}>{r.stageLabel}</div>}
-        {(r.client || r.group) && <div style={{fontSize:12, color:C.textMut}}>{[r.client, r.group].filter(Boolean).join(" · ")}</div>}
-        {r.status === "finished" && <div style={{fontSize:11, color:C.gold, marginTop:6}}>Zakończona – kliknij po szczegóły</div>}
-      </Card>
+        <div style={{display:"flex", flexDirection:"column", gap:8, maxWidth:400, margin:"0 auto"}}>
+          {playing.map(r => (
+            <Btn key={r.code} onClick={() => setSelectedRoom(r.code)}>{r.code}</Btn>
+          ))}
+        </div>
+      </div>
     );
   }
 
   return (
     <div>
-      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20}}>
-        <div style={{fontSize:20, fontWeight:700, color:C.gold}}>Monitor rozgrywek</div>
-        <Btn small variant="ghost" onClick={() => setRefreshKey(k => k + 1)}>
-          {loading ? "Ładowanie…" : "Odśwież"}
-        </Btn>
-      </div>
-
-      {playing.length > 0 && (
-        <div style={{marginBottom:24}}>
-          <div style={{fontSize:14, fontWeight:700, color:C.greenLt, marginBottom:10, letterSpacing:0.5}}>
-            AKTYWNE ({playing.length})
-          </div>
-          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:12}}>
-            {playing.map(r => <RoomCard key={r.code} r={r} />)}
-          </div>
-        </div>
-      )}
-
-      {lobby.length > 0 && (
-        <div style={{marginBottom:24}}>
-          <div style={{fontSize:14, fontWeight:700, color:C.gold, marginBottom:10, letterSpacing:0.5}}>
-            LOBBY ({lobby.length})
-          </div>
-          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:12}}>
-            {lobby.map(r => <RoomCard key={r.code} r={r} />)}
-          </div>
-        </div>
-      )}
-
-      {!loading && playing.length === 0 && lobby.length === 0 && (
-        <Card><div style={{textAlign:"center", color:C.textMut, padding:40, fontSize:15}}>Oczekiwanie na rozgrywkę</div></Card>
-      )}
+      <Card><div style={{textAlign:"center", color:C.textMut, padding:40, fontSize:15}}>Oczekiwanie na rozgrywkę</div></Card>
     </div>
   );
 }
