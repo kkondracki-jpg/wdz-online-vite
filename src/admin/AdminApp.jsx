@@ -506,10 +506,11 @@ function TicketsView({trainers: allTrainers}) {
 
   function loadTickets() {
     if (!db) return;
-    db.ref("tickets").once("value").then(snap => {
+    db.ref("tickets").orderByKey().once("value").then(snap => {
       setLoading(false);
       var arr = [];
       if (snap.exists()) snap.forEach(c => arr.push({id:c.key,...c.val()}));
+      console.log("[WDZ] loadTickets:", arr.length, "biletów");
       arr.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
       setTickets(arr);
     });
