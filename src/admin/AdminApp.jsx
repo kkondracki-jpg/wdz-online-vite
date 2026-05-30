@@ -505,15 +505,18 @@ function TicketsView({trainers: allTrainers}) {
   const [refreshKey, setRefreshKey] = useState(0);
 
   function loadTickets() {
-    if (!db) return;
-    db.ref("tickets").orderByKey().once("value").then(snap => {
+    if (!auth || !auth.currentUser) { setLoading(false); return; }
+    auth.currentUser.getIdToken().then(function(token) {
+      return fetch("https://wdz-online-default-rtdb.firebaseio.com/tickets.json?auth=" + token);
+    }).then(function(res) { return res.json(); }).then(function(data) {
       setLoading(false);
       var arr = [];
-      if (snap.exists()) snap.forEach(c => arr.push({id:c.key,...c.val()}));
-      console.log("[WDZ] loadTickets:", arr.length, "biletów");
-      arr.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+      if (data && typeof data === "object") {
+        Object.keys(data).forEach(function(k) { arr.push({id: k, ...data[k]}); });
+      }
+      arr.sort(function(a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
       setTickets(arr);
-    });
+    }).catch(function(e) { setLoading(false); console.error("[WDZ] loadTickets error:", e); });
   }
 
   useEffect(() => {
