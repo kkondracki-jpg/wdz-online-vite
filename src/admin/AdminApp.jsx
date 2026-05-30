@@ -1350,7 +1350,7 @@ function ReportView({roomCode, onClose}){
                 revDuels:rd.revDuels,meta:rd.meta,sheriffCalls:rd.sheriffCalls||[],
                 plotPenalties:rd.plotPenalties,mapBonusClaimed:rd.mapBonusClaimed,stageIdx:data.stageIdx,
                 biznesNaBoku:rd.biznesNaBoku,consultations:{}};
-              var report=generateReport(roomCode,gs,null,rd.scores,rd.txStats,{1:{total:0},2:{total:0},3:{total:0}},[],[],{},0,rd.consultNotes||{});
+              var report=generateReport(roomCode,gs,null,rd.scores,rd.txStats,{1:{total:0},2:{total:0},3:{total:0}},[],[],{},0,rd.consultNotes||{},{txPerTurn:rd.txPerTurn,turnLabels:rd.turnLabels,tasks:rd.tasks});
               if(report){var blob=new Blob([report],{type:"text/plain;charset=utf-8"});var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="wdz-diagnostyczny-"+roomCode+"-"+new Date().toISOString().slice(0,10)+".txt";document.body.appendChild(a);a.click();document.body.removeChild(a);}
             }}>📋 Diagnostyczny</Btn>
             <Btn small variant="ghost" onClick={onClose}>← Wróć</Btn>
@@ -2172,7 +2172,7 @@ function calcPhaseStats(txs) {
 /* ========== SESSION REPORT EXPORT ========== */
 function fragName(nr) { return nr===1?"Adamsów":nr===2?"Bennetów":nr===3?"Clintonów":nr===4?"Dexterów":nr===5?"Szeryfa":"?"; }
 
-function generateReport(roomCode, gameState, players, scores, txStats, phaseStats, eventLog, cashSnapshots, connHistory, elapsed, consultNotes) {
+function generateReport(roomCode, gameState, players, scores, txStats, phaseStats, eventLog, cashSnapshots, connHistory, elapsed, consultNotes, precomputed) {
   var fd = gameState ? gameState.fd : null;
   var relData = gameState ? gameState.relations || {} : {};
   var lines = [];
@@ -2332,18 +2332,25 @@ function generateReport(roomCode, gameState, players, scores, txStats, phaseStat
 
   // RYTM TRANSAKCJI PER TURA
   lines.push("── RYTM TRANSAKCJI PER TURA ──");
-  var tradeTxForRhythm = txs.filter(t => t && t.status === "accepted" && (t.type === "sale" || t.type === "barter") && t.phase !== undefined && t.phase !== null);
-  if(tradeTxForRhythm.length > 0 && fd) {
-    var turnLabels = ["F1T1","F1T2","F1T3","F2T1","F2T2","F2T3","F3T1","F3T2","F3T3"];
-    var txPerTurn = {};
-    FO.forEach(fId => { txPerTurn[fId] = [0,0,0,0,0,0,0,0,0]; });
-    tradeTxForRhythm.forEach(tx => {
-      var p = tx.phase;
-      if(p >= 0 && p <= 8) {
-        if(tx.from && txPerTurn[tx.from]) txPerTurn[tx.from][p]++;
-        if(tx.to && txPerTurn[tx.to]) txPerTurn[tx.to][p]++;
-      }
-    });
+  var turnLabels = precomputed && precomputed.turnLabels ? precomputed.turnLabels : ["F1T1","F1T2","F1T3","F2T1","F2T2","F2T3","F3T1","F3T2","F3T3"];
+  var txPerTurn = null;
+  if(precomputed && precomputed.txPerTurn) {
+    txPerTurn = precomputed.txPerTurn;
+  } else {
+    var tradeTxForRhythm = txs.filter(t => t && t.status === "accepted" && (t.type === "sale" || t.type === "barter") && t.phase !== undefined && t.phase !== null);
+    if(tradeTxForRhythm.length > 0 && fd) {
+      txPerTurn = {};
+      FO.forEach(fId => { txPerTurn[fId] = [0,0,0,0,0,0,0,0,0]; });
+      tradeTxForRhythm.forEach(tx => {
+        var p = tx.phase;
+        if(p >= 0 && p <= 8) {
+          if(tx.from && txPerTurn[tx.from]) txPerTurn[tx.from][p]++;
+          if(tx.to && txPerTurn[tx.to]) txPerTurn[tx.to][p]++;
+        }
+      });
+    }
+  }
+  if(txPerTurn) {
     lines.push("                 " + turnLabels.join("  "));
     FO.forEach(fId => {
       var name = (FM[fId].nom + "               ").slice(0, 16);
@@ -2356,7 +2363,18 @@ function generateReport(roomCode, gameState, players, scores, txStats, phaseStat
 
   // REALIZACJA ZADAŃ
   lines.push("── REALIZACJA ZADAŃ ──");
-  if(fd) {
+  if(precomputed && precomputed.tasks) {
+    FO.forEach(fId => {
+      var f = FM[fId];
+      var t = precomputed.tasks[fId];
+      if(!t) return;
+      var plotLabel = t.hasCorrectPlot ? "docelowa (nr " + t.targetPlot + ")" : t.plotNr != null ? "startowa (nr " + t.plotNr + ")" : "brak";
+      lines.push(f.nom + ":");
+      lines.push("  Zasoby:       " + t.resOwned + "/" + t.resTotal + " kart (" + t.resPct + "% wagi)");
+      lines.push("  Kompetencje:  " + t.compOwned + "/" + t.compTotal + " kart (" + t.compPct + "% wagi)");
+      lines.push("  Działka:      " + plotLabel);
+    });
+  } else if(fd) {
     FO.forEach(fId => {
       var f = FM[fId];
       var items = fd[fId] ? fd[fId].items || [] : [];
@@ -3595,12 +3613,11 @@ function MonitorTab() {
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedRoom, setSelectedRoom] = useState(null);
-  const [refreshKey, setRefreshKey] = useState(0);
 
-  function loadRooms() {
+  useEffect(() => {
     if(!db) { setLoading(false); return; }
-    setLoading(true);
-    db.ref("rooms").once("value").then(snap => {
+    var ref = db.ref("rooms");
+    var handler = ref.on("value", snap => {
       var list = [];
       snap.forEach(child => {
         var val = child.val();
@@ -3617,20 +3634,12 @@ function MonitorTab() {
           group: meta.group || "",
         });
       });
-      // Sort: playing first, then lobby, then finished, by createdAt desc
       var order = {playing:0, lobby:1, finished:2, expired:3};
       list.sort((a,b) => (order[a.status]||9) - (order[b.status]||9) || b.createdAt - a.createdAt);
       setRooms(list);
       setLoading(false);
-    }).catch(e => { console.error("MonitorTab loadRooms:", e); setLoading(false); });
-  }
-
-  useEffect(() => { loadRooms(); }, [refreshKey]);
-
-  // Auto-refresh every 30s
-  useEffect(() => {
-    var iv = setInterval(() => setRefreshKey(k => k + 1), 30000);
-    return () => clearInterval(iv);
+    }, e => { console.error("MonitorTab listener:", e); setLoading(false); });
+    return () => ref.off("value", handler);
   }, []);
 
   if(selectedRoom) {
