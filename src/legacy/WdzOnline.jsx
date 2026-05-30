@@ -1226,15 +1226,28 @@ function App({roomCode,role,playerId,playerName}) {
 
   // Powiadomienia o zmianie statusu transakcji dla rodzin
   var prevTxStatusRef=useRef({});
+  var txInitialLoadDone=useRef(false);
   useEffect(()=>{
     if(isSheriffAny)return;
     var prev=prevTxStatusRef.current;
     var next={};
+    var isFirstLoad=!txInitialLoadDone.current;
     txs.forEach(function(t){
       if(!t||!t.id)return;
       next[t.id]=t.status;
       var oldStatus=prev[t.id];
-      if(!oldStatus||oldStatus===t.status)return;
+      if(oldStatus===t.status)return;
+      // Nowa transakcja (nie widziana wcześniej)
+      if(!oldStatus){
+        // Przy pierwszym renderze tylko rejestruj, nie powiadamiaj
+        if(isFirstLoad)return;
+        // Powiadom o nowej ofercie skierowanej do naszej rodziny
+        if(t.to===cf&&(t.status==="pending"||t.status==="awaiting_response")){
+          var fromName=FM[t.from]?FM[t.from].gen:t.from;
+          showMsg("Nowa oferta od "+fromName+"!");
+        }
+        return;
+      }
       var involves=(t.from===cf||t.to===cf);
       if(!involves)return;
       var partner=t.from===cf?t.to:t.from;
@@ -1248,6 +1261,7 @@ function App({roomCode,role,playerId,playerName}) {
       }
     });
     prevTxStatusRef.current=next;
+    if(isFirstLoad)txInitialLoadDone.current=true;
   },[txs]);
 
   // Auto-placement: sync mapLayout when items change
