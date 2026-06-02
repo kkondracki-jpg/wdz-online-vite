@@ -24,7 +24,7 @@ export function FateEventCard({sum, showEvent}) {
 }
 
 /* ========== BLIND FATE FAMILY - 1200x604 LAYOUT ========== */
-export function BlindFateFamily({fId, blindFate}) {
+export function BlindFateFamily({fId, blindFate, readonly}) {
   var bf=blindFate[fId]||{}, policies=bf.policies||{p50:null,p100:null}, rolls=bf.rolls||[];
   var currentRollIdx=rolls.length>0?rolls.length-1:-1;
   var currentRoll=currentRollIdx>=0?rolls[currentRollIdx]:null;
@@ -58,7 +58,7 @@ export function BlindFateFamily({fId, blindFate}) {
   var showRollingDice = currentRoll && currentRoll.rolling;
   var showResultDice = currentRoll && currentRoll.resolved && currentRoll.showDice && !currentRoll.showCard;
   var showSum = currentRoll && currentRoll.resolved && currentRoll.showCard;
-  var showRollButton = currentRoll && currentRoll.diceReady && !currentRoll.resolved && !currentRoll.rolling;
+  var showRollButton = !readonly && currentRoll && currentRoll.diceReady && !currentRoll.resolved && !currentRoll.rolling;
   
   var staticD1 = 3, staticD2 = 4;
   var diceSize = 100;

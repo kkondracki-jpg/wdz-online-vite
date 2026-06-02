@@ -1,4 +1,4 @@
-/* WDZ Online v3.1.0 – Vite entry point */
+/* WDZ Online v3.2.0 – Vite entry point */
 import React from "react";
 import ReactDOM from "react-dom/client";
 

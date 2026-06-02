@@ -1516,7 +1516,7 @@ function MonitorApp() {
                 </div>
                 {fd_f && (() => {
                   var plots = fd_f.items.filter(i => i.cat === C_PLOT);
-                  var plotOk = plots.length === 1 && plots[0].plotNr === f.tPlot;
+                  var plotOk = plots.some(i => i.plotNr === f.tPlot);
                   var maps = [...new Set(fd_f.items.filter(i => i.cat === C_MAP).map(m => m.fragNr))].length;
                   return (
                     <div style={{display:"flex", gap:8, fontSize:11, color:"#7A6A5A"}}>

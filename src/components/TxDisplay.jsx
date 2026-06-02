@@ -11,12 +11,15 @@ export function TxDisplay({tx,cf,onAccept,onReject,onRespond}) {
 
   // Map bonus
   if(tx.type==="map_bonus") {
-    var isWinner=tx.from===cf;
+    var isWinner=tx.from==="bank"&&tx.to===cf;
+    var isLoser=tx.from===cf&&tx.to==="bank";
     return (<div style={{padding:12,borderRadius:5,border:"1px solid #D4C870",background:"#FFFDF0",marginBottom:8}}>
       <div style={{fontSize:13,fontWeight:700,color:"#8B7714"}}>
         {isWinner
           ? "BONUS 300 $ za zdobycie wszystkich fragmentów mapy"
-          : "WYDATEK: 100 $ dla rodziny "+(FM[tx.from]||{gen:tx.from}).gen+", która jako pierwsza zdobyła wszystkie fragmenty mapy"}
+          : isLoser
+          ? "WYDATEK: 100 $ – inna rodzina jako pierwsza zdobyła wszystkie fragmenty mapy"
+          : (tx.description||"Premia Złotodajnej Żyły")}
       </div>
     </div>);
   }

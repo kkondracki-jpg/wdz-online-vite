@@ -124,13 +124,14 @@ export function SheriffPlanningTab({readOnly,roomCode,lobbyPlayers,gameStarted,s
 }
 
 /* ========== SHERIFF PANEL ========== */
-export function SheriffPanel({readOnly,fd,txs,consultations,setConsultations,consultNotes,setConsultNotes,setFd,showMsg,blindFate,setBlindFate,showResults,setShowResults,onViewFamily,plotPenalties,setPlotPenalties,setTxs,biznesNaBoku,setBiznesNaBoku,relations,relationsUnlocked,setRelationsUnlocked,gameStarted,stageIdx,stageDurations,setStageDurations,startStage,pauseTimer,resumeTimer,advanceStage,timerRunning,timerPaused,secondsLeft,manualMode,setManualMode,sheriffCalls,setSheriffCalls,bnbEnabled,setBnbEnabled,bnbSettled,activateBnb,settleBnb,fateEnabled,setFateEnabled,mapEnabled,setMapEnabled,revEnabled,setRevEnabled,revMaxBet,setRevMaxBet,revDuels,revCurrent,revNewDuel,revSetBet,revReveal,revSettle,revMode,setRevMode,revActive,setRevActive,revStartTournament,getRevTimer,revRevealDuel,revSettleDuel,mapBonusClaimed,devMode,setDevMode}) {
+export function SheriffPanel({readOnly,fd,txs,consultations,setConsultations,consultNotes,setConsultNotes,setFd,showMsg,blindFate,setBlindFate,showResults,setShowResults,onViewFamily,plotPenalties,setPlotPenalties,setTxs,biznesNaBoku,setBiznesNaBoku,relations,relationsUnlocked,setRelationsUnlocked,gameStarted,stageIdx,stageDurations,setStageDurations,startStage,pauseTimer,resumeTimer,advanceStage,timerRunning,timerPaused,secondsLeft,manualMode,setManualMode,sheriffCalls,setSheriffCalls,bnbEnabled,setBnbEnabled,bnbSettled,activateBnb,settleBnb,fateEnabled,setFateEnabled,mapEnabled,setMapEnabled,revEnabled,setRevEnabled,revMaxBet,setRevMaxBet,revDuels,revCurrent,revNewDuel,revSetBet,revReveal,revSettle,revMode,setRevMode,revActive,setRevActive,revStartTournament,getRevTimer,revRevealDuel,revSettleDuel,mapBonusClaimed,devMode,setDevMode,fbPrependTx,fbUpdateTxStatus}) {
   var boxBg={background:"#fff",backgroundImage:"url("+IMG_BASE+"tlo_uniwersalne-2.png)",backgroundSize:"cover",backgroundPosition:"center"};
   function completeConsult(fId,idx){setConsultations(prev=>{var arr=(prev[fId]||[]).slice();arr[idx]={...arr[idx],questionsUsed:arr[idx].questionsUsed+1};return{...prev,[fId]:arr};});showMsg("Odnotowano pytanie rodziny "+FM[fId].gen);}
   function grantConsultation(fId){
     if(fd[fId].cash<15){showMsg("Rodzina "+FM[fId].gen+" nie ma 15 $!");return;}
     setFd(prev=>{var n={...prev};n[fId]={...n[fId],cash:n[fId].cash-15};return n;});
-    setTxs(prev=>[{id:txId(),type:"consultation_sold",from:fId,to:"sheriff",status:"accepted",offeredItems:[],description:"Konsultacja z Szeryfem – 15 $"},...prev]);
+    var cTxEntry={id:txId(),type:"consultation_sold",from:fId,to:"sheriff",status:"accepted",offeredItems:[],description:"Konsultacja z Szeryfem – 15 $"};
+    setTxs(prev=>[cTxEntry,...prev]);if(fbPrependTx)fbPrependTx(cTxEntry);
     setConsultations(prev=>{var arr=(prev[fId]||[]).concat([{status:"active",questionsUsed:0,questionsTotal:3}]);return{...prev,[fId]:arr};});
     // Mark ONLY THE FIRST waiting call as sold (not all)
     setSheriffCalls(prev=>{var found=false;return prev.map(c=>{if(!found&&c.fId===fId&&c.status==="waiting"){found=true;return{...c,status:"sold"};}return c;});});
@@ -141,7 +142,10 @@ export function SheriffPanel({readOnly,fd,txs,consultations,setConsultations,con
     if(call.status==="sold"){
       // Refund 15$
       setFd(prev=>{var n={...prev};n[call.fId]={...n[call.fId],cash:n[call.fId].cash+15};return n;});
-      setTxs(prev=>[{id:txId(),type:"consultation_refund",from:"sheriff",to:call.fId,status:"accepted",offeredItems:[],description:"Anulowanie konsultacji – zwrot 15 $"},...prev]);
+      var rTxEntry={id:txId(),type:"consultation_refund",from:"sheriff",to:call.fId,status:"accepted",offeredItems:[],description:"Anulowanie konsultacji – zwrot 15 $"};
+      setTxs(prev=>[rTxEntry,...prev]);if(fbPrependTx)fbPrependTx(rTxEntry);
+      // Usuń ostatnio dodaną konsultację dla tej rodziny
+      setConsultations(prev=>{var arr=(prev[call.fId]||[]).slice();arr.pop();return{...prev,[call.fId]:arr};});
       showMsg("Konsultacja anulowana (zwrot 15 $ dla "+FM[call.fId].gen+")");
     }
     setSheriffCalls(prev=>prev.map((c,i)=>i===callIdx?{...c,status:"cancelled"}:c));
@@ -200,6 +204,7 @@ export function SheriffPanel({readOnly,fd,txs,consultations,setConsultations,con
       n[last.from]=f;n[last.to]=t;return n;
     });
     setTxs(prev=>prev.map(t=>t.id===last.id?{...t,status:"undone"}:t));
+    if(fbUpdateTxStatus)fbUpdateTxStatus(last.id,{status:"undone"});
     setUndoConfirm(false);
     showMsg("Cofnięto transakcję: "+(FM[last.from]||{nom:last.from}).nom+" → "+(FM[last.to]||{nom:last.to}).nom);
   }
@@ -422,7 +427,7 @@ export function SheriffPanel({readOnly,fd,txs,consultations,setConsultations,con
       <div style={{fontSize:18,fontWeight:700,color:"#842504",marginBottom:10}} className="wt">Statystyki rodzin</div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
         {FO.map(fId=>{var f=FM[fId],d=fd[fId],sc=calcScore(fId,fd,plotPenalties,biznesNaBoku,bnbEnabled,blindFate,mapEnabled,mapBonusClaimed);
-          var plotI=d.items.find(i=>i.cat===C_PLOT),plotOk=plotI&&plotI.plotNr===f.tPlot;
+          var plotOk=d.items.some(i=>i.cat===C_PLOT&&i.plotNr===f.tPlot),plotI=d.items.find(i=>i.cat===C_PLOT&&i.plotNr===f.tPlot)||d.items.find(i=>i.cat===C_PLOT);
           return (<div key={fId} style={{background:"#fff",border:"2px solid "+f.col,borderRadius:6,padding:10}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
               <div style={{fontSize:14,fontWeight:700,color:f.col}} className="wt">{f.nom}</div>
@@ -459,7 +464,7 @@ export function SheriffPanel({readOnly,fd,txs,consultations,setConsultations,con
         var fTx=allTx.filter(t=>t.from===fId||t.to===fId);
         var fPen=penaltyTx.filter(t=>t.from===fId);
         var fFate=txs.filter(t=>t.type==="fate"&&t.from===fId&&t.status==="accepted");
-        var fMap=txs.filter(t=>t.type==="map_bonus"&&t.status==="accepted"&&(t.from===fId||(t.to==="all"&&t.from!==fId)));
+        var fMap=txs.filter(t=>t.type==="map_bonus"&&t.status==="accepted"&&(t.from===fId||t.to===fId));
         var fBnb=txs.filter(t=>(t.type==="bnb_settle"||t.type==="bnb_bonus")&&(t.from===fId||t.to===fId)&&t.status==="accepted");
         var fRev=txs.filter(t=>t.type==="revolver"&&(t.from===fId||t.to===fId)&&t.status==="accepted");
         var fCancelled=txs.filter(t=>t.status==="cancelled"&&(t.type==="sale"||t.type==="barter")&&(t.from===fId||t.to===fId));

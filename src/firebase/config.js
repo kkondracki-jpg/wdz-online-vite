@@ -24,8 +24,9 @@ if(!IS_LOCAL && typeof firebase !== "undefined"){
   db = firebase.database();
   auth = firebase.auth();
   // Sign in anonymously only if no existing session (preserves email login)
+  // window.__WDZ_SKIP_ANON is set by admin panel to prevent signIn/signOut loop
   auth.onAuthStateChanged(function(user){
-    if(!user){
+    if(!user && !window.__WDZ_SKIP_ANON){
       auth.signInAnonymously().catch(function(e){ console.warn("[WDZ] Auth failed:", e.message); });
     }
   });
@@ -59,7 +60,3 @@ export function getUrlParams(){
   return{sessionCode:s.toUpperCase(),familyId:f.toLowerCase()};
 }
 
-export function buildFamilyLink(roomCode,familyId){
-  var base=window.location.origin+window.location.pathname;
-  return base+"?s="+roomCode+"&f="+familyId;
-}

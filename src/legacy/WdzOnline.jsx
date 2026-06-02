@@ -59,7 +59,7 @@ function Lobby({onJoin}){
     if(mode!=="link_join"||!db) return;
     db.ref("rooms/"+roomCode+"/meta").once("value").then(snap=>{
       if(!snap.exists()){setError("Rozgrywka "+roomCode+" nie istnieje. Sprawdź link.");setMode(null);}
-      else if(snap.val().status==="archived"){setError("Ta rozgrywka została zarchiwizowana i nie jest już dostępna.");setMode(null);}
+      else if(snap.val()&&snap.val().status==="archived"){setError("Ta rozgrywka została zarchiwizowana i nie jest już dostępna.");setMode(null);}
     }).catch(e=>{setError("Błąd połączenia: "+e.message);});
   },[]);
 
@@ -203,7 +203,7 @@ function Lobby({onJoin}){
     setLoading(true);setError(null);
     db.ref("rooms/"+code+"/meta").once("value").then(snap=>{
       if(!snap.exists()){setError("Rozgrywka "+code+" nie istnieje");setLoading(false);return;}
-      if(snap.val().status==="archived"){setError("Ta rozgrywka została zarchiwizowana i nie jest już dostępna.");setLoading(false);return;}
+      if(snap.val()&&snap.val().status==="archived"){setError("Ta rozgrywka została zarchiwizowana i nie jest już dostępna.");setLoading(false);return;}
       setRoomCode(code);setMode("joining");setLoading(false);
     }).catch(e=>{setError("Błąd połączenia: "+e.message);setLoading(false);});
   }
@@ -246,7 +246,7 @@ function Lobby({onJoin}){
           <div style={{fontSize:32,fontWeight:900,color:"#D4A853",letterSpacing:1,fontFamily:"'Alegreya Sans',sans-serif",lineHeight:1.1}} className="wt">Wschód Dzikiego Zachodu<sup style={{fontSize:16,fontWeight:400}}>©</sup> Online</div>
           <div style={{fontSize:14,color:"#C4B090",marginTop:2}}>Platforma Sieciowa</div>
         </div>
-        <div style={{fontSize:13,color:"#8B7355",marginTop:10}}>v3.0.2</div>
+        <div style={{fontSize:13,color:"#8B7355",marginTop:10}}>v3.2.0</div>
       </div>
 
       {/* === INITIAL CHOICE === */}
@@ -876,7 +876,8 @@ function App({roomCode,role,playerId,playerName}) {
       var curFd=stateRef.current.fd;
       var actualWin=Math.min(winAmt,curFd[loser].cash);
       setFd(fd2=>{var n={...fd2};var aw=Math.min(winAmt,n[loser].cash);n[c.winner]={...n[c.winner],cash:n[c.winner].cash+aw};n[loser]={...n[loser],cash:n[loser].cash-aw};return n;});
-      setTxs(p=>[...p,{id:ci(),type:"revolver",from:loser,to:c.winner,amount:actualWin,field:c.winField,status:"accepted",ts:Date.now()}]);
+      var revTxEntry={id:ci(),type:"revolver",from:loser,to:c.winner,amount:actualWin,field:c.winField,status:"accepted",ts:Date.now()};
+      setTxs(p=>[...p,revTxEntry]);fbPrependTx(revTxEntry);
     }
     setRevDuels(d=>[...d,{...c,settled:true}]);
     setRevActive(prev=>prev.filter(d=>d.id!==duelId));
@@ -992,7 +993,7 @@ function App({roomCode,role,playerId,playerName}) {
     var doSync=function(){
       var cur=stateRef.current;
       var prev=prevSyncRef.current;
-      var publicFields=["fd","txs","blindFate","mapEnabled","mapBonusClaimed","relations","relationsUnlocked",
+      var publicFields=["fd","blindFate","mapEnabled","mapBonusClaimed","relations","relationsUnlocked",
         "plotPenalties","bnbEnabled","fateEnabled","showResults","debriefUnlocked","debriefFullAccess",
         "revEnabled","revMode","revDuels","revActive","revCurrent","devMode","tutorialDone",
         "gameStarted","stageIdx","stageDurations","timerRunning","timerPaused","timerStartedAt","timerDuration",
@@ -1378,13 +1379,15 @@ function App({roomCode,role,playerId,playerName}) {
             var newFd=snapshot.val();
             fbIncoming.current=true;
             if(newFd)setFd(newFd);
-            var mbTxId="mb-"+fId;
-            var mbTxEntry={id:mbTxId,type:"map_bonus",from:fId,to:"all",status:"accepted",offeredItems:[]};
+            var mbTxs=[];
+            mbTxs.push({id:"mb-win-"+fId,type:"map_bonus",from:"bank",to:fId,status:"accepted",offeredItems:[],description:"Premia Złotodajnej Żyły +300 $"});
+            FO.forEach(function(lf){if(lf!==fId)mbTxs.push({id:"mb-lose-"+lf,type:"map_bonus",from:lf,to:"bank",status:"accepted",offeredItems:[],description:"Opłata za Złotodajną Żyłę –100 $"});});
             setTxs(function(p){
-              if(p.some(function(t){return t&&t.id===mbTxId;}))return p;
-              return [mbTxEntry].concat(p);
+              var existIds={};p.forEach(function(t){if(t&&t.id)existIds[t.id]=true;});
+              var fresh=mbTxs.filter(function(t){return !existIds[t.id];});
+              return fresh.concat(p);
             });
-            fbPrependTx(mbTxEntry);
+            mbTxs.forEach(function(t){fbPrependTx(t);});
             setMapBonusClaimed(function(p){return Object.assign({},p,{[fId]:true});});
             prevSyncRef.current=Object.assign({},prevSyncRef.current,{fd:newFd,mapBonusClaimed:Object.assign({},prevSyncRef.current.mapBonusClaimed||{},{[fId]:true})});
             setTimeout(function(){fbIncoming.current=false;},50);
@@ -1416,10 +1419,13 @@ function App({roomCode,role,playerId,playerName}) {
       });
       return n;
     });
-    var mbTxId="mb-"+fId;
+    var mbTxs=[];
+    mbTxs.push({id:"mb-win-"+fId,type:"map_bonus",from:"bank",to:fId,status:"accepted",offeredItems:[],description:"Premia Złotodajnej Żyły +300 $"});
+    FO.forEach(function(lf){if(lf!==fId)mbTxs.push({id:"mb-lose-"+lf,type:"map_bonus",from:lf,to:"bank",status:"accepted",offeredItems:[],description:"Opłata za Złotodajną Żyłę –100 $"});});
     setTxs(prev=>{
-      if(prev.some(function(t){return t&&t.id===mbTxId;})) return prev;
-      return [{id:mbTxId,type:"map_bonus",from:fId,to:"all",status:"accepted",offeredItems:[]},...prev];
+      var existIds={};prev.forEach(function(t){if(t&&t.id)existIds[t.id]=true;});
+      var fresh=mbTxs.filter(function(t){return !existIds[t.id];});
+      return fresh.concat(prev);
     });
     showMsg(FM[fId].nom+" ułożyli Złotodajną Żyłę! Premia 300 $!");
   }
@@ -1467,6 +1473,7 @@ function App({roomCode,role,playerId,playerName}) {
       setSheriffCalls([]);
       setTutorialDone({});tutorialRedirectedRef.current={};
       if(db&&roomCode){
+        db.ref("rooms/"+roomCode+"/gameState/txs").set([]);
         db.ref("rooms/"+roomCode+"/instructionCompleted").remove();
         db.ref("rooms/"+roomCode+"/txMeetLock").remove();
         db.ref("rooms/"+roomCode+"/txLock").remove();
@@ -1475,6 +1482,7 @@ function App({roomCode,role,playerId,playerName}) {
     }
     // Auto-cancel pending txs z poprzedniego etapu
     setTxs(prev=>{var changed=false;var n=prev.map(t=>{if(t.status==="pending"||t.status==="awaiting_response"){changed=true;return{...t,status:"cancelled",cancelReason:"Koniec tury"};}return t;});return changed?n:prev;});
+    if(db&&roomCode){db.ref("rooms/"+roomCode+"/gameState/txs").transaction(function(cur){if(!cur)return cur;var arr=Array.isArray(cur)?cur:(typeof cur==="object"?Object.values(cur):null);if(!arr)return cur;return arr.map(function(t){return t&&(t.status==="pending"||t.status==="awaiting_response")?Object.assign({},t,{status:"cancelled",cancelReason:"Koniec tury"}):t;});});}
     setStageIdx(idx);setGameStarted(true);
     var dur=stageDurations[STAGES[idx].id]*60;
     var now=Date.now()+serverTimeOffset;
@@ -1507,12 +1515,13 @@ function App({roomCode,role,playerId,playerName}) {
     FO.forEach(function(fId){
       if(plotPenalties[fId]) return;
       var f=FM[fId],d=fd[fId];if(!d)return;
-      var plotI=d.items.find(function(i){return i.cat===C_PLOT;});
-      var plotOk=plotI&&plotI.plotNr===f.tPlot;
+      var plotOk=d.items.some(function(i){return i.cat===C_PLOT&&i.plotNr===f.tPlot;});
       if(!plotOk){
+        var plotI=d.items.find(function(i){return i.cat===C_PLOT;});
         setFd(function(prev){var n={...prev};var newCash=Math.max(0,n[fId].cash-50);n[fId]={...n[fId],cash:newCash};return n;});
-        setTxs(function(prev){return [{id:txId(),type:"plot_cost",from:fId,to:"sheriff",status:"accepted",offeredItems:[],
-          description:"Dodatkowy koszt 50 $ wynikający z posiadania niewłaściwej działki (nr "+(plotI?plotI.plotNr:"?")+", docelowa: "+f.tPlot+")"},...prev];});
+        var plotTxEntry={id:txId(),type:"plot_cost",from:fId,to:"sheriff",status:"accepted",offeredItems:[],
+          description:"Dodatkowy koszt 50 $ wynikający z posiadania niewłaściwej działki (nr "+(plotI?plotI.plotNr:"?")+", docelowa: "+f.tPlot+")"};
+        setTxs(function(prev){return [plotTxEntry,...prev];});fbPrependTx(plotTxEntry);
         setPlotPenalties(function(prev){return {...prev,[fId]:true};});
       }
     });
@@ -1589,20 +1598,22 @@ function App({roomCode,role,playerId,playerName}) {
       var soldAll=ownCards.length===0;
       var cost=300; // ZAWSZE 300$ dla dostawcy
       var bonus=soldAll?100:0;
+      var netCost=Math.min(cost-bonus,fd[fId].cash);
       setFd(prev=>{var n={...prev};
         // guard: nie zejdź poniżej 0
-        var netCost=Math.min(cost-bonus,n[fId].cash);
-        n[fId]={...n[fId],cash:n[fId].cash-netCost};return n;});
+        var nc=Math.min(cost-bonus,n[fId].cash);
+        n[fId]={...n[fId],cash:n[fId].cash-nc};return n;});
       // Wpis 1: Opłata dla dostawcy (zawsze)
       newTxs.push({id:txId(),type:"bnb_settle",from:fId,to:"dostawca",status:"accepted",offeredItems:[],
-        description:"Opłata dla dostawcy – 300 $"});
+        description:"Opłata dla dostawcy – "+(soldAll?(netCost+bonus):netCost)+" $"});
       // Wpis 2: Rabat od dostawcy (tylko gdy sprzedano wszystko)
       if(soldAll){
         newTxs.push({id:txId(),type:"bnb_bonus",from:"dostawca",to:fId,status:"accepted",offeredItems:[],
-          description:"Rabat od dostawcy – 100 $"});
+          description:"Rabat od dostawcy – "+bonus+" $"});
       }
     });
     setTxs(prev=>[...newTxs,...prev]);
+    newTxs.forEach(function(t){fbPrependTx(t);});
     setBnbSettled(true);showMsg("Biznes na boku – rozliczono!");
   }
 
@@ -1842,8 +1853,9 @@ function App({roomCode,role,playerId,playerName}) {
         }
         var desc="Rzut ["+d1+"+"+d2+"="+sum+"] – "+(ev2?ev2.text:"")+" → "+net;
         if(policyUsed) desc+=" (polisa "+policyUsed+"%)";
-        if(ev2&&ev2.type==="loss_resources") desc="Rzut ["+d1+"+"+d2+"="+sum+"] – utrata 10% zasobów na koniec rozgrywki"+(policyUsed?" (polisa "+policyUsed+"%)":"");
-        setTxs(prev2=>[{id:txId(),type:"fate",from:fId,to:"sheriff",status:"accepted",offeredItems:[],description:desc},...prev2]);
+        if(ev2&&ev2.type==="loss_resources"){var resPen=pu===100?0:pu===50?5:10;desc="Rzut ["+d1+"+"+d2+"="+sum+"] – utrata "+resPen+"% zasobów na koniec rozgrywki"+(policyUsed?" (polisa "+policyUsed+"%)":"");}
+        var fateTxEntry={id:txId(),type:"fate",from:fId,to:"sheriff",status:"accepted",offeredItems:[],description:desc};
+        setTxs(prev2=>[fateTxEntry,...prev2]);fbPrependTx(fateTxEntry);
         showMsg(FM[fId].nom+": "+ev2.text);
 
         // Auto-hide after 20s (sum visible), return to static dice + P1/P2 cleanup
@@ -2016,7 +2028,7 @@ function App({roomCode,role,playerId,playerName}) {
               {stageIdx>=STAGES.length-1&&!isSheriff2&&<button onClick={()=>{if(window.confirm("Czy na pewno chcesz zarchiwizować rozgrywkę? Uczestnicy stracą dostęp.")){db.ref("rooms/"+roomCode+"/meta/status").set("archived").then(()=>{showMsg("Rozgrywka zarchiwizowana. Uczestnicy nie mogą już dołączyć.","success");}).catch(e=>{showMsg("Błąd archiwizacji: "+e.message);});}}} style={{padding:"10px 24px",fontSize:14,fontFamily:"'Alegreya Sans', sans-serif",fontWeight:500,background:"url("+IMG_BASE+"wynik_przycisk-1.png) center/contain no-repeat",color:"#F8E7CC",border:"none",borderRadius:0,cursor:"pointer",minWidth:180,minHeight:44}}>Archiwizuj rozgrywkę</button>}
             </div>
             <div style={{paddingTop:193,paddingLeft:30,paddingRight:30}}>
-              <SheriffPanel readOnly={isSheriff2} fd={fd} txs={txs} consultations={consultations} setConsultations={setConsultations} consultNotes={consultNotes} setConsultNotes={setConsultNotes} setFd={setFd} showMsg={showMsg} blindFate={blindFate} setBlindFate={setBlindFate} showResults={showResults} setShowResults={setShowResults} onViewFamily={fId=>setSheriffViewFamily(fId)} plotPenalties={plotPenalties} setPlotPenalties={setPlotPenalties} setTxs={setTxs} biznesNaBoku={biznesNaBoku} setBiznesNaBoku={setBiznesNaBoku} relations={relations} relationsUnlocked={relationsUnlocked} setRelationsUnlocked={setRelationsUnlocked} gameStarted={gameStarted} stageIdx={stageIdx} stageDurations={stageDurations} setStageDurations={setStageDurations} startStage={startStage} pauseTimer={pauseTimer} resumeTimer={resumeTimer} advanceStage={advanceStage} timerRunning={timerRunning} timerPaused={timerPaused} secondsLeft={secondsLeft} manualMode={manualMode} setManualMode={setManualMode} sheriffCalls={sheriffCalls} setSheriffCalls={setSheriffCalls} bnbEnabled={bnbEnabled} setBnbEnabled={setBnbEnabled} bnbSettled={bnbSettled} activateBnb={activateBnb} settleBnb={settleBnb} fateEnabled={fateEnabled} setFateEnabled={setFateEnabled} mapEnabled={mapEnabled} setMapEnabled={setMapEnabled} revEnabled={revEnabled} setRevEnabled={setRevEnabled} revMaxBet={revMaxBet} setRevMaxBet={setRevMaxBet} revDuels={revDuels} revCurrent={revCurrent} revNewDuel={revNewDuel} revSetBet={revSetBet} revReveal={revReveal} revSettle={revSettle} revMode={revMode} setRevMode={setRevMode} revActive={revActive} setRevActive={setRevActive} revStartTournament={revStartTournament} getRevTimer={getRevTimer} revRevealDuel={revRevealDuel} revSettleDuel={revSettleDuel} mapBonusClaimed={mapBonusClaimed} devMode={devMode} setDevMode={setDevMode}/>
+              <SheriffPanel readOnly={isSheriff2} fd={fd} txs={txs} consultations={consultations} setConsultations={setConsultations} consultNotes={consultNotes} setConsultNotes={setConsultNotes} setFd={setFd} showMsg={showMsg} blindFate={blindFate} setBlindFate={setBlindFate} showResults={showResults} setShowResults={setShowResults} onViewFamily={fId=>setSheriffViewFamily(fId)} plotPenalties={plotPenalties} setPlotPenalties={setPlotPenalties} setTxs={setTxs} biznesNaBoku={biznesNaBoku} setBiznesNaBoku={setBiznesNaBoku} relations={relations} relationsUnlocked={relationsUnlocked} setRelationsUnlocked={setRelationsUnlocked} gameStarted={gameStarted} stageIdx={stageIdx} stageDurations={stageDurations} setStageDurations={setStageDurations} startStage={startStage} pauseTimer={pauseTimer} resumeTimer={resumeTimer} advanceStage={advanceStage} timerRunning={timerRunning} timerPaused={timerPaused} secondsLeft={secondsLeft} manualMode={manualMode} setManualMode={setManualMode} sheriffCalls={sheriffCalls} setSheriffCalls={setSheriffCalls} bnbEnabled={bnbEnabled} setBnbEnabled={setBnbEnabled} bnbSettled={bnbSettled} activateBnb={activateBnb} settleBnb={settleBnb} fateEnabled={fateEnabled} setFateEnabled={setFateEnabled} mapEnabled={mapEnabled} setMapEnabled={setMapEnabled} revEnabled={revEnabled} setRevEnabled={setRevEnabled} revMaxBet={revMaxBet} setRevMaxBet={setRevMaxBet} revDuels={revDuels} revCurrent={revCurrent} revNewDuel={revNewDuel} revSetBet={revSetBet} revReveal={revReveal} revSettle={revSettle} revMode={revMode} setRevMode={setRevMode} revActive={revActive} setRevActive={setRevActive} revStartTournament={revStartTournament} getRevTimer={getRevTimer} revRevealDuel={revRevealDuel} revSettleDuel={revSettleDuel} mapBonusClaimed={mapBonusClaimed} devMode={devMode} setDevMode={setDevMode} fbPrependTx={fbPrependTx} fbUpdateTxStatus={fbUpdateTxStatus}/>
             </div>
           </div>}
 
@@ -2164,7 +2176,7 @@ function App({roomCode,role,playerId,playerName}) {
             var sold=myProduct.qty-forSale.length;
             return(<BnbTab familyId={familyId} sold={sold} total={myProduct.qty} familyData={familyData}/>);
           })()}
-          {activeTab==="fate"&&fateEnabled&&<BlindFateFamily fId={familyId} blindFate={blindFate}/>}
+          {activeTab==="fate"&&fateEnabled&&<BlindFateFamily fId={familyId} blindFate={blindFate} readonly={!isSheriff}/>}
           {activeTab==="rel"&&relationsUnlocked&&(()=>{
             var CATS=[
               {key:"partnership",   label:"Partnerstwo",          desc:["Zespół dbał tylko o swoje interesy","Zespół dbał o interesy dwóch stron"]},
@@ -2197,18 +2209,18 @@ function App({roomCode,role,playerId,playerName}) {
           })()}
           {activeTab==="results"&&debriefUnlocked&&<DebriefingPanel viewMode="player" familyId={familyId} fd={fd} txs={txs} blindFate={blindFate} relations={relations} revDuels={revDuels} debriefFullAccess={debriefFullAccess} debriefTab={playerDebriefTab} setDebriefTab={setPlayerDebriefTab} readOnly={true} debriefNotes={{}} setDebriefNotes={null} debriefUnlocked={debriefUnlocked} setDebriefUnlocked={null} setDebriefFullAccess={null} showMsg={null} mapEnabled={mapEnabled} bnbEnabled={bnbEnabled} biznesNaBoku={biznesNaBoku} fateEnabled={fateEnabled} plotPenalties={plotPenalties} mapBonusClaimed={mapBonusClaimed}/>}
           {activeTab==="rev"&&revEnabled&&(()=>{
-            var rc=revActive.find(d=>d.familyA===familyId||d.familyB===familyId)||revCurrent;
+            var rc=revActive.find(d=>d.familyA===familyId||d.familyB===familyId)||(viewSheriff?revCurrent:null);
             var duelTimer=rc?getRevTimer(rc.id):-1;
             return <RewolwerowiecNew rc={rc} familyId={familyId} duelTimer={duelTimer} revSubmitShots={revSubmitShots} revDuels={revDuels} getRevTimer={getRevTimer}/>;
           })()}
         </div>
         {(activeTab==="inv"||activeTab==="tutorial")&&<div style={{position:"sticky",top:12,alignSelf:"start"}}>
           {/* Przyciski transakcji */}
-          {!viewSheriff&&isTradePhase&&<div style={{display:"flex",gap:6,marginBottom:12}}>
+          {isTradePhase&&<div style={{display:"flex",gap:6,marginBottom:12}}>
             <img src={IMG_BASE+"przycisk_sprzedaz.png"} style={{width:177,height:50,cursor:"pointer",display:"block"}} alt="Sprzedaż" onClick={()=>openTxForm("sale")}/>
             <img src={IMG_BASE+"przycisk_barter.png"} style={{width:177,height:50,cursor:"pointer",display:"block"}} alt="Barter" onClick={()=>openTxForm("barter")}/>
           </div>}
-          {!viewSheriff&&gameActive&&!isTradePhase&&<div style={{display:"flex",gap:6,marginBottom:12,opacity:0.35,pointerEvents:"none"}}>
+          {gameActive&&!isTradePhase&&<div style={{display:"flex",gap:6,marginBottom:12,opacity:0.35,pointerEvents:"none"}}>
             <img src={IMG_BASE+"przycisk_sprzedaz.png"} style={{width:177,height:50,display:"block",filter:"grayscale(1)"}} alt="Sprzedaż"/>
             <img src={IMG_BASE+"przycisk_barter.png"} style={{width:177,height:50,display:"block",filter:"grayscale(1)"}} alt="Barter"/>
           </div>}

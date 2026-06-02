@@ -234,7 +234,7 @@ function LoginScreen({onLogin}) {
           if (snap.val() === true) {
             onLogin(cred.user);
           } else {
-            auth.signOut();
+            window.__WDZ_SKIP_ANON=true;auth.signOut();
             setError("To konto nie ma dostępu do panelu administracyjnego.");
           }
         });
@@ -271,7 +271,7 @@ function LoginScreen({onLogin}) {
             <div style={{fontSize:32, fontWeight:900, color:"#D4A853", letterSpacing:1, fontFamily:"'Alegreya Sans',sans-serif", lineHeight:1.1}}>Wschód Dzikiego Zachodu<sup style={{fontSize:16,fontWeight:400}}>©</sup> Online</div>
             <div style={{fontSize:14, color:"#C4B090", marginTop:2}}>Panel administracyjny</div>
           </div>
-          <div style={{fontSize:13, color:"#8B7355", marginTop:10}}>v1.0.1</div>
+          <div style={{fontSize:13, color:"#8B7355", marginTop:10}}>v1.1.0</div>
         </div>
 
         <div style={{background:"#FDFAF4", border:"1px solid #D4C4A8", borderRadius:8, padding:20}}>
@@ -793,8 +793,7 @@ function gCalcScores(fd, relations, plotPenalties, mapEnabled, bnbEnabled, blind
     var cashScore=Math.max(-25,Math.min(25,Math.round(((cashForScore-600)/600)*25)));
 
     // Działka
-    var plotItem=items.find(i=>i.cat===C_PLOT);
-    var plotOk=plotItem&&plotItem.plotNr===FM[f].tPlot;
+    var plotOk=items.some(i=>i.cat===C_PLOT&&i.plotNr===FM[f].tPlot);
     var plotScore=plotOk?10:0;
 
     // Mapa (z mapBonusClaimed)
@@ -2340,8 +2339,8 @@ function generateReport(roomCode, gameState, players, scores, txStats, phaseStat
       if(settleTx.length) bal.push("- 300$ prowizja dla dostawcy BnB");
       if(bonusTx.length) bal.push("+ 100$ rabat od dostawcy");
       var mapTx = txArr.filter(t=>t&&t.type==="map_bonus");
-      var isMapWinner = mapTx.some(t=>t.from===fId);
-      var isMapLoser = mapTx.length>0 && !isMapWinner;
+      var isMapWinner = mapTx.some(t=>t.from==="bank"&&t.to===fId);
+      var isMapLoser = mapTx.some(t=>t.from===fId&&t.to==="bank");
       if(isMapWinner) bal.push("+ 300$ premia za Złotodajną Żyłę");
       if(isMapLoser) bal.push("- 100$ koszt premii za Złotodajną Żyłę");
       bal.push("= " + fd[fId].cash + "$ (końcowa)");
@@ -3760,7 +3759,7 @@ function AdminApp() {
         db.ref("admins/" + u.uid).once("value").then(snap => {
           setChecking(false);
           if (snap.val() === true) setUser(u);
-          else { auth.signOut(); setUser(null); }
+          else { window.__WDZ_SKIP_ANON=true;auth.signOut(); setUser(null); }
         }).catch(err => {
           // Network error – don't sign out, keep current state
           console.warn("[WDZ Admin] Admin check failed, keeping session:", err.message);
@@ -3840,11 +3839,11 @@ function AdminApp() {
           justifyContent:"space-between", height:56}}>
           <div style={{display:"flex", alignItems:"center", gap:16}}>
             <img src="img/alegra_logotyp.png" alt="aleGRA" style={{height:36, width:"auto"}}/>
-            <div style={{color:C.textMut, fontSize:13}}>Panel WDZ <span style={{fontSize:11,opacity:0.6}}>v1.0.1</span></div>
+            <div style={{color:C.textMut, fontSize:13}}>Panel WDZ <span style={{fontSize:11,opacity:0.6}}>v1.1.0</span></div>
           </div>
           <div style={{display:"flex", alignItems:"center", gap:16}}>
             <div style={{fontSize:13, color:C.textMut}}>{user.email}</div>
-            <Btn small variant="ghost" onClick={() => auth.signOut()}>Wyloguj</Btn>
+            <Btn small variant="ghost" onClick={() => {window.__WDZ_SKIP_ANON=true;auth.signOut();}}>Wyloguj</Btn>
           </div>
         </div>
       </div>

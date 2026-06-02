@@ -61,7 +61,7 @@ export function MapTracker({items, mapBonusClaimed, fId, mapLayout, setMapLayout
     {/* Status – czcionka jak Majątek */}
     <div style={{display:"flex",gap:16,justifyContent:"center",marginBottom:12,fontSize:18,color:"#51211B"}}>
       <span>Liczba punktów: <b>{mapScore}</b> <span style={{color:"#6B5A4A"}}>(max 10)</span></span>
-      <span>Posiadane fragmenty mapy: <b>{uniqueNrs.length}/5</b></span>
+      <span>Posiadane fragmenty mapy: <b>{uniqueNrs.length}/4</b></span>
       {fId&&<span>Fragmenty mapy na sprzedaż: <b>{forSale}/3</b></span>}
     </div>
     {/* === PLANSZA Z TŁEM (gracz) === */}

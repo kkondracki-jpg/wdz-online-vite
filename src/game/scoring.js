@@ -49,8 +49,7 @@ export function calcScore(fId, fd, plotPenalties, biznesNaBoku, bnbEnabled, blin
     else{compPct=Math.min(100, compPct + bnbMikstura*4);}
   }
   var compScore=(compPct/100)*25;
-  var plotItem=items.find(i=>i.cat===C_PLOT);
-  var plotOk=plotItem&&plotItem.plotNr===f.tPlot;
+  var plotOk=items.some(i=>i.cat===C_PLOT&&i.plotNr===f.tPlot);
   var plotScore=plotOk?10:0;
   var cashBase=d.cash;
   var cashForScore=bnbEnabled?cashBase*(1+bnbObligacje*0.2):cashBase;
