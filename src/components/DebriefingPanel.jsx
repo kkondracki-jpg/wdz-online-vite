@@ -169,7 +169,7 @@ export function DebriefingPanel({viewMode,familyId,fd,txs,blindFate,relations,re
     }
     var compPts=Math.round((compPct/100)*25);
     var cashForScore=bnbEnabled?cash*(1+bnbObligacje*0.2):cash;
-    var cashPts=Math.round(((cashForScore-600)/600)*25);
+    var cashPts=Math.round((cashForScore/600)*25);
     var plotPts=hasCorrectPlot?10:0;
     var mapClaimed=!!(mapBonusClaimed&&mapBonusClaimed[fId]);
     var mapPts=mapEnabled?Math.min(10, uniqueMapCount*2 + (mapClaimed&&uniqueMapCount===4?2:0)):0;
@@ -177,10 +177,8 @@ export function DebriefingPanel({viewMode,familyId,fd,txs,blindFate,relations,re
     var relPts=Math.round(calcRelationScore(fId, relations));
     var totalPts=resPts+compPts+cashPts+plotPts+mapPts+bnbPts+relPts;
     
-    var mapWinner=null;var maxFrags=0;
-    if(mapEnabled){
-      F.forEach(f=>{var frags=[...new Set((fd[f]&&fd[f].items||[]).filter(i=>i.cat==="map").map(m=>m.fragNr))].length;if(frags>maxFrags){maxFrags=frags;mapWinner=f;}else if(frags===maxFrags&&maxFrags>0){mapWinner=null;}});
-    }
+    var mapWinner=null;
+    if(mapEnabled&&mapBonusClaimed){F.forEach(function(f){if(mapBonusClaimed[f])mapWinner=f;});}
     var gotMapBonus=mapEnabled&&mapWinner===fId;
     var lostToWinner=mapEnabled&&mapWinner&&mapWinner!==fId?mapWinner:null;
     
@@ -338,7 +336,7 @@ export function DebriefingPanel({viewMode,familyId,fd,txs,blindFate,relations,re
 
       {/* KARTY Z\u0141OTODAJNEJ \u017BY\u0141Y y=803 */}
       {mapEnabled&&<div style={{position:"absolute",left:30,top:803,display:"flex",gap:3}}>
-        {[1,2,3,4,5].map(fragNr=>{
+        {[5,4,3,2,1].map(fragNr=>{
           var hasIt=myMaps.some(m=>m.fragNr===fragNr);
           return(<div key={fragNr} style={{width:118,height:118,filter:hasIt?"none":"saturate(0.3)"}}>
             <img src={IMG_BASE+"map_fragment-"+fragNr+".png"} style={{width:"100%",height:"100%",display:"block",objectFit:"contain"}} alt={"Fragment "+fragNr}/>
